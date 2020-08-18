@@ -146,7 +146,7 @@ void LungSegmentation::execute() {
     // Get airways
     AirwaySegmentation::pointer airwaySegmentation = AirwaySegmentation::New();
     if(mUseManualSeedPoint) {
-        airwaySegmentation->setSeedPoint(mSeedPoint);
+        airwaySegmentation->addSeedPoint(mSeedPoint);
     }
     airwaySegmentation->setInputData(input);
     DataChannel::pointer airwaySegPort = airwaySegmentation->getOutputPort();

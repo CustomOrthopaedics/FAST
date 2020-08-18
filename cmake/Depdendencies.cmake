@@ -81,6 +81,7 @@ endif()
 
 ## External depedencies
 include(cmake/ExternalEigen.cmake)
+include(cmake/ExternalJSON.cmake)
 add_definitions("-DEIGEN_MPL2_ONLY") # Avoid using LGPL code in eigen http://eigen.tuxfamily.org/index.php?title=Main_Page#License
 include(cmake/ExternalZlib.cmake)
 

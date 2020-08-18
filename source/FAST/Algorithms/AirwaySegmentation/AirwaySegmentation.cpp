@@ -116,7 +116,7 @@ static int grow(uchar* segmentation, std::vector<Vector3i> neighbors, std::vecto
     return voxels.size();
 }
 
-void regionGrowing(Image::pointer volume, Segmentation::pointer segmentation, const Vector3i seed) {
+void regionGrowing(Image::pointer volume, Segmentation::pointer segmentation, const std::vector<Vector3i> seeds) {
     const int width = volume->getWidth();
     const int height = volume->getHeight();
     const int depth = volume->getDepth();
@@ -126,51 +126,73 @@ void regionGrowing(Image::pointer volume, Segmentation::pointer segmentation, co
 	ImageAccess::pointer access2 = segmentation->getImageAccess(ACCESS_READ_WRITE);
 	uchar* segmentationData = (uchar*)access2->get();
 	memset(segmentationData, 0, width*height*depth);
-    std::vector<Vector3i> voxels; // All voxels currently in segmentation
-    segmentationData[seed.x() + seed.y()*width + seed.z()*width*height] = 1;
-    voxels.push_back(seed);
-    float threshold = data[seed.x() + seed.y()*width + seed.z()*width*height];
-    const float volumeIncreaseLimit = 20000.0f; // how much the volume is allowed to increase per step
-    const float volumeMinimum = 100000.0f; // minimum volume size of airways
-    float VT = 0.0f; // volume with given threshold
-    float deltaT = 2.0f;
-    float spacing = 1.0f;
+	uchar* seedSeg = (uchar*) malloc(width*height*depth);
 
-    // Create neighbor list
-    std::vector<Vector3i> neighborList;
-	for(int a = -1; a < 2; a++) {
-	for(int b = -1; b < 2; b++) {
-	for(int c = -1; c < 2; c++) {
-		if(a == 0 && b == 0 && c == 0)
-			continue;
-		neighborList.push_back(Vector3i(a,b,c));
-	}}}
+	for (int i = 0; i < seeds.size(); ++i) {
+		std::vector<Vector3i> voxels; // All voxels currently in segmentation
+		Vector3i seed = seeds[i];
+		memset(seedSeg, 0, width*height*depth);
+		seedSeg[seed.x() + seed.y()*width + seed.z()*width*height] = 1;
+		voxels.push_back(seed);
+		float threshold = data[seed.x() + seed.y()*width + seed.z()*width*height];
+		const float volumeIncreaseLimit = 20000.0f; // how much the volume is allowed to increase per step
+		const float volumeMinimum = 100000.0f; // minimum volume size of airways
+		float VT = 0.0f; // volume with given threshold
+		float deltaT = 2.0f;
+		float spacing = 1.0f;
 
-    float Vnew = spacing*grow(segmentationData, neighborList, voxels, data, threshold, width, height, depth, VT, volumeIncreaseLimit, volumeMinimum);
-    // Loop until explosion is detected
-    do {
-        VT = Vnew;
-        threshold += deltaT;
-        // Growing is stopped if it goes over the volumeIncreaseLimit
-		Vnew = spacing*grow(segmentationData, neighborList, voxels, data, threshold, width, height, depth, VT, volumeIncreaseLimit, volumeMinimum);
-        Reporter::info() << "using threshold: " << threshold << Reporter::end();
-        Reporter::info() << "gives volume size: " << Vnew << Reporter::end();
-		Reporter::info() << "volume diff: " << Vnew - VT << Reporter::end();
-    } while(Vnew-VT < volumeIncreaseLimit || Vnew < volumeMinimum);
+		std::cout << "Segmenting seed: " << seed << std::endl;
 
-    float explosionVolume = Vnew;
-	Reporter::info() << "Ungrowing.." << Reporter::end();
-    threshold -= deltaT;
-    VT = Vnew;
+		// Create neighbor list
+		std::vector<Vector3i> neighborList;
+		for(int a = -1; a < 2; a++) {
+		for(int b = -1; b < 2; b++) {
+		for(int c = -1; c < 2; c++) {
+			if(a == 0 && b == 0 && c == 0)
+				continue;
+			neighborList.push_back(Vector3i(a,b,c));
+		}}}
 
-    // Ungrow one step
-    voxels.clear();
-    voxels.push_back(seed);
-    memset(segmentationData, 0, width*height*depth);
-    segmentationData[seed.x() + seed.y()*width + seed.z()*width*height] = 1;
-    VT = spacing*grow(segmentationData, neighborList, voxels, data, threshold, width, height, depth, VT, std::numeric_limits<float>::max(), volumeMinimum);
-    Reporter::info() << "using threshold: " << threshold << Reporter::end();
-    Reporter::info() << "gives volume size: " << VT << Reporter::end();
+		float Vnew = spacing*grow(seedSeg, neighborList, voxels, data, threshold, width, height, depth, VT, volumeIncreaseLimit, volumeMinimum);
+		// Loop until explosion is detected
+		do {
+			VT = Vnew;
+			threshold += deltaT;
+			// Growing is stopped if it goes over the volumeIncreaseLimit
+			Vnew = spacing*grow(seedSeg, neighborList, voxels, data, threshold, width, height, depth, VT, volumeIncreaseLimit, volumeMinimum);
+			Reporter::info() << "using threshold: " << threshold << Reporter::end();
+			Reporter::info() << "gives volume size: " << Vnew << Reporter::end();
+			Reporter::info() << "volume diff: " << Vnew - VT << Reporter::end();
+		} while(Vnew-VT < volumeIncreaseLimit || Vnew < volumeMinimum);
+
+		float explosionVolume = Vnew;
+		Reporter::info() << "Ungrowing.." << Reporter::end();
+		threshold -= deltaT;
+		VT = Vnew;
+
+		// Ungrow one step
+		voxels.clear();
+		voxels.push_back(seed);
+		memset(seedSeg, 0, width*height*depth);
+		seedSeg[seed.x() + seed.y()*width + seed.z()*width*height] = 1;
+		VT = spacing*grow(seedSeg, neighborList, voxels, data, threshold, width, height, depth, VT, std::numeric_limits<float>::max(), volumeMinimum);
+		Reporter::info() << "using threshold: " << threshold << Reporter::end();
+		Reporter::info() << "gives volume size: " << VT << Reporter::end();
+
+		std::cout << "Combining segmentations...\n";
+
+		for (int x = 0; x < width; ++x) {
+			for (int y = 0; y < height; ++y) {
+				for (int z = 0; z < depth; ++z) {
+					int index = x + y*width + z*width*height;
+					if (seedSeg[index] == 1) {
+						segmentationData[index] = 1;
+					}
+				}
+			}
+		}
+	}
+	free(seedSeg);
 }
 
 Image::pointer AirwaySegmentation::convertToHU(Image::pointer image) {
@@ -284,41 +306,44 @@ void AirwaySegmentation::execute() {
         image = port->getNextFrame<Image>();
     }
 
-	// Find seed voxel
-	Vector3i seed;
-	if(mUseManualSeedPoint) {
-		seed = mSeedPoint;
-		// Validate seed point
-		if(seed.x() < 0 || seed.y() < 0 || seed.z() < 0 ||
-				seed.x() >= image->getWidth() || seed.y() >= image->getHeight() || seed.z() >= image->getDepth()) {
-			throw Exception("Seed point was not inside image in AirwaySegmentation");
-		}
-	} else {
-		seed = findSeedVoxel(image);
-	}
-
-	if(seed == Vector3i::Zero()) {
-		throw Exception("No seed found.");
-	}
-
-	reportInfo() << "Using seed point: " << seed.transpose() << reportEnd();
-
-	// Do the region growing
 	Segmentation::pointer segmentation = getOutputData<Segmentation>();
-	regionGrowing(image, segmentation, seed);
+	
+	if (mSeedPoints.size() > 0) {
+		for (int i = 0; i < mSeedPoints.size(); ++i) {
+			Vector3i seed = mSeedPoints[i];
+
+			// Validate seed point
+			if(seed.x() < 0 || seed.y() < 0 || seed.z() < 0 ||
+					seed.x() >= image->getWidth() || seed.y() >= image->getHeight() || seed.z() >= image->getDepth()) {
+				throw Exception("Seed point was not inside image in AirwaySegmentation");
+			}
+		}
+
+		regionGrowing(image, segmentation, mSeedPoints);
+	} else {
+		Vector3i seed = findSeedVoxel(image);
+
+		if(seed == Vector3i::Zero()) {
+			throw Exception("No seed found.");
+		}
+
+		autoSeed = seed;
+
+		reportInfo() << "Using seed point: " << seed.transpose() << reportEnd();
+
+		regionGrowing(image, segmentation, std::vector<Vector3i>{seed});
+	}
 
 	// Do morphological closing to remove holes in segmentation
 	morphologicalClosing(segmentation);
-
 }
 
-void AirwaySegmentation::setSeedPoint(int x, int y, int z) {
-    setSeedPoint(Vector3i(x, y, z));
+void AirwaySegmentation::addSeedPoint(int x, int y, int z) {
+    addSeedPoint(Vector3i(x, y, z));
 }
 
-void AirwaySegmentation::setSeedPoint(Vector3i seed) {
-	mSeedPoint = seed;
-	mUseManualSeedPoint = true;
+void AirwaySegmentation::addSeedPoint(Vector3i seed) {
+	mSeedPoints.push_back(seed);
 }
 
 void AirwaySegmentation::setSmoothing(float sigma) {
