@@ -9,9 +9,6 @@
 #include "FAST/Importers/ImageFileImporter.hpp"
 #include "FAST/Algorithms/SurfaceExtraction/SurfaceExtraction.hpp"
 #include "FAST/Algorithms/CenterlineExtraction/CenterlineExtraction.hpp"
-#include "FAST/Visualization/TriangleRenderer/TriangleRenderer.hpp"
-#include "FAST/Visualization/LineRenderer/LineRenderer.hpp"
-#include "FAST/Visualization/SimpleWindow.hpp"
 #include "FAST/Tools/CommandLineParser.hpp"
 #include "nlohmann/json.hpp"
 #include <iostream>
