@@ -117,6 +117,7 @@ int main(int argc, char** argv) {
 	// Extract centerline from segmentation
 	auto centerline = CenterlineExtraction::New();
 	centerline->setInputConnection(segmentation->getOutputPort());
+	centerline->setOffset(offset);
 
 	auto exporter = MetaImageExporter::New();
 	std::string airwayPath = (std::string)segData["results_path"] + "/seg_" + std::to_string((int)segData["seg_id"]) + ".mhd";

@@ -4,6 +4,7 @@
 #include "FAST/Utility.hpp"
 #include <unordered_set>
 #include <stack>
+#include <iostream>
 #include "FAST/Exporters/MetaImageExporter.hpp"
 
 
@@ -488,11 +489,11 @@ void CenterlineExtraction::execute() {
 			if(pointsToAdd.size() > 10) { // minimum length
 				growFromPointsAdded(pointsToAdd, G, Sc, processed, size);
 				int counter = vertices.size();
-				vertices.push_back(MeshVertex(pointsToAdd[0].cast<float>().cwiseProduct(spacing)));
+				vertices.push_back(MeshVertex(pointsToAdd[0].cast<float>().cwiseProduct(spacing) + offset));
 				refinedCenterline.insert(linearPosition(pointsToAdd[0], size));
 				for(int i = 1; i < pointsToAdd.size(); ++i) {
 					refinedCenterline.insert(linearPosition(pointsToAdd[i], size));
-					vertices.push_back(MeshVertex(pointsToAdd[i].cast<float>().cwiseProduct(spacing)));
+					vertices.push_back(MeshVertex(pointsToAdd[i].cast<float>().cwiseProduct(spacing) + offset));
 					lines.push_back(MeshLine(counter, counter + 1));
 					counter += 1;
 				}
@@ -503,6 +504,10 @@ void CenterlineExtraction::execute() {
 	Mesh::pointer output = getOutputData<Mesh>();
     output->create(vertices, lines);
 	SceneGraph::setParentNode(output, input);
+}
+
+void CenterlineExtraction::setOffset(Vector3f off) {
+	offset = off;
 }
 
 
