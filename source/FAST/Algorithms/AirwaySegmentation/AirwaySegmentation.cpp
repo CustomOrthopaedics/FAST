@@ -3,8 +3,170 @@
 #include "FAST/Data/Segmentation.hpp"
 #include <unordered_set>
 #include <stack>
+#include <queue>
+#include <vector>
+#include <algorithm>
+#include <boost/accumulators/statistics/variance.hpp>
+#include <boost/accumulators/accumulators.hpp>
+#include <boost/accumulators/statistics/stats.hpp>
+#include <boost/accumulators/statistics/mean.hpp>
+#include <boost/accumulators/statistics/moment.hpp>
+
+
+// def _findCentricity(startPoint, startValue, interpolating_function):
+//     smallestDiameter = 99999.9
+//     rayPairs = []
+//     for direction in icohalf:
+//         # find walls in positive and negative directions:
+//         endDistance = _findDistanceToWall(
+//             direction, startPoint, startValue, interpolating_function)
+//         endDistanceOpp = _findDistanceToWall(-direction,
+//                                              startPoint, startValue,
+//                                              interpolating_function)
+
+//         diameter = endDistance + endDistanceOpp
+//         if diameter < smallestDiameter:
+//             smallestDiameter = diameter
+
+//         # store all the Radii by diameter
+//         heapq.heappush(rayPairs, (diameter, [endDistance, endDistanceOpp]))
+
+//     # find lower half of the diameters (diameters below median)
+//     halfRayCount = int(len(rayPairs)/2)
+//     rayArray = np.array([heapq.heappop(rayPairs)[1]
+//                          for i in range(halfRayCount)])
+
+//     # calculate centricity as c(x) = 1 - (stdDev of radii / mean of radii)
+//     radiiMean = np.mean(rayArray)
+//     centricity = 1 - (np.std(rayArray) / radiiMean)
+
+//     # (note: ideal centricity is 1, decreases to < 0 as less
+//     # centered or less cylindrical surroundings)
+//     return centricity, radiiMean, smallestDiameter / 2.0, rayArray.min() > 5.0
+
+
+// def _sampleAlongRay(ray, distance, start, my_interpolating_function):
+//     # ray and start are numpy arrays
+//     # distance is scalar
+//     # img3d is 3D numpy array
+//     endPoint = start + (ray * distance)
+//     # Use trilinear interpolation
+//     endValue = my_interpolating_function(endPoint)
+//     return endValue  # endValue[0]
+
+
+// def _findDistanceToWall(direction, startPoint, startValue,
+//                         interpolating_function):
+//     #    sample repeatedly along ray
+//     sampleDistance = dr
+//     #    stop when max is reached
+//     while sampleDistance < rMax:
+//         endValue = _sampleAlongRay(
+//             direction, sampleDistance, startPoint, interpolating_function)
+//         #    stop when delta W is reached (delta of startValue and endValue)
+//         if endValue - startValue > deltaW:
+//             break
+//         sampleDistance += dr
+//     #    get distance endPoint - startPoint (magnitude of ray)
+//     return sampleDistance
+
+using namespace boost::accumulators;
 
 namespace fast {
+
+Vector3f icohalf[21] = {
+    Vector3f(0.276388, 0.447220, 0.850649),
+    Vector3f(-0.723607, 0.447220, 0.525725),
+    Vector3f(-0.723607, 0.447220, -0.525725),
+    Vector3f(0.276388, 0.447220, -0.850649),
+    Vector3f(0.894426, 0.447216, 0.000000),
+    Vector3f(0.000000, 1.000000, 0.000000),
+    Vector3f(0.951058, 0.000000, -0.309013),
+    Vector3f(-0.587786, 0.000000, -0.809017),
+    Vector3f(-0.951058, 0.000000, -0.309013),
+    Vector3f(0.587786, 0.000000, -0.809017),
+    Vector3f(0.000000, 0.000000, -1.000000),
+    Vector3f(0.688189, 0.525736, 0.499997),
+    Vector3f(-0.262869, 0.525738, 0.809012),
+    Vector3f(-0.850648, 0.525736, 0.000000),
+    Vector3f(-0.262869, 0.525738, -0.809012),
+    Vector3f(0.688189, 0.525736, -0.499997),
+    Vector3f(0.162456, 0.850654, 0.499995),
+    Vector3f(0.525730, 0.850652, 0.000000),
+    Vector3f(-0.425323, 0.850654, 0.309011),
+    Vector3f(-0.425323, 0.850654, -0.309011),
+    Vector3f(0.162456, 0.850654, -0.499995)
+};
+
+
+// https://stackoverflow.com/a/5712235
+struct Vox {
+	Vector3i point;
+	float centricity;
+	float minRadius;
+
+	Vox(Vector3i p, float cent, float rad) {
+		point = p;
+		centricity = cent;
+		minRadius = rad;
+	}
+
+	bool operator <(const struct Vox& other) const {
+		return centricity < other.centricity;
+	}
+};
+
+float deltaW = 200;
+float dr = 0.5;
+float rMax = 20.0;
+float maxRadiusIncrease = 2.4;
+float maxAirwayDensity = -550.0;
+
+static int getIndex(Vector3i point, int height, int width, int depth) {
+	int idx = point.x() + point.y()*width + point.z()*width*height;
+	return idx < depth*width*height - 1 ? idx : depth*width*height - 1;
+}
+
+static float findDistanceToWall(short *vol, Vector3f dir, Vector3i startPoint, int height, int width, int depth) {
+	int startVal = vol[getIndex(startPoint, height, width, depth)];
+	// std::cout << "start val: " << startVal << std::endl;
+	int endVal = 0;
+	float distance = 0.0;
+
+	do {
+		distance += dr;
+		Vector3i endPoint(std::round(dir.x()*distance + 0.5), std::round(dir.y()*distance + 0.5), std::round(dir.z()*distance + 0.5));
+		endPoint = startPoint + endPoint;
+		endVal = vol[getIndex(endPoint, height, width, depth)];
+	} while(endVal - startVal < deltaW && distance <= rMax);
+
+	return distance;
+}
+
+static std::vector<float> getVoxelData(short *vol, Vector3i point, int height, int width, int depth) {
+	std::vector<float> diameters;
+	for (int i = 0; i < 21; i++) {
+		float dist1 = findDistanceToWall(vol, icohalf[i], point, height, width, depth);
+		float dist2 = findDistanceToWall(vol, -1 * icohalf[i], point, height, width, depth);
+
+		diameters.push_back(dist1 + dist2);
+	}
+
+	std::sort(diameters.begin(), diameters.end());
+
+	accumulator_set<float, stats<tag::variance> > acc;
+	for (int i = 0; i < 10; i++) {
+		acc(diameters[i]);
+	}
+
+	float radiiMean = mean(acc) / 2.0;
+	float radiStdDev = sqrt(variance(acc)) / 2.0;
+
+	float centricity = 1 - (radiStdDev / radiiMean);
+	float smallestRadius = diameters[0] / 2.0;
+
+	return std::vector<float>{centricity, radiiMean, smallestRadius};
+}
 
 AirwaySegmentation::AirwaySegmentation() {
 	createInputPort<Image>(0);
@@ -85,31 +247,62 @@ Vector3i AirwaySegmentation::findSeedVoxel(Image::pointer volume) {
 }
 
 static int grow(uchar* segmentation, std::vector<Vector3i> neighbors, std::vector<Vector3i>& voxels, short* data, float threshold, int width, int height, int depth, float previousVolume, float volumeIncreaseLimit, int volumeMinimum) {
-    std::stack<Vector3i> stack;
+    std::priority_queue<Vox> queue;
     // TODO voxels coming in here consists of all voxels, should only need to add the front..
     for(Vector3i voxel : voxels) {
-        stack.push(voxel);
+        queue.push(Vox(voxel, 1.0, 10000.0));
     }
 
-    while(!stack.empty() && (voxels.size() - previousVolume < volumeIncreaseLimit || voxels.size() < volumeMinimum)) {
-        Vector3i x = stack.top();
-        stack.pop();
+	float pathMinRadius = 9999.0;
+
+    while (!queue.empty() && (voxels.size() - previousVolume < volumeIncreaseLimit || voxels.size() < volumeMinimum)) {
+        Vox currVox = queue.top();
+        queue.pop();
+
+		pathMinRadius = currVox.minRadius;
+
+		Vector3i x = currVox.point;
         segmentation[x.x() + x.y()*width + x.z()*width*height] = 1; // TODO is this needed?
 
         // Add 26 neighbors
-        for(int i = 0; i < 25; ++i) {
+        for (int i = 0; i < 25; ++i) {
         	Vector3i neighbor = neighbors[i];
             Vector3i y(x.x()+neighbor.x(), x.y()+neighbor.y(), x.z()+neighbor.z());
+
+			// outside of volume
 			if(y.x() < 0 || y.y() < 0 || y.z() < 0 ||
 				y.x() >= width || y.y() >= height || y.z() >= depth) {
                 continue;
             }
 
-            if(data[y.x() + y.y()*width + y.z()*width*height] <= threshold && segmentation[y.x() + y.y()*width + y.z()*width*height] == 0) {
-				segmentation[y.x() + y.y()*width + y.z()*width*height] = 1;
-                voxels.push_back(y);
-                stack.push(y);
-            }
+			// voxel already in mask
+			if (segmentation[y.x() + y.y()*width + y.z()*width*height] != 0) {
+				continue;
+			}
+
+			// above threshold
+			if (data[y.x() + y.y()*width + y.z()*width*height] > threshold) {
+				continue;
+			}
+
+			segmentation[y.x() + y.y()*width + y.z()*width*height] = 1;
+			voxels.push_back(y);
+
+			std::vector<float> voxData = getVoxelData(data, y, height, width, depth);
+			float centricity = voxData[0];
+			float radiiMean = voxData[1];
+			float smallestRadius = voxData[2];
+
+			// radius is too large, voxel may be leaking
+			if (radiiMean > pathMinRadius * maxRadiusIncrease) {
+				continue;
+			}
+
+			if (pathMinRadius < smallestRadius) {
+				smallestRadius = pathMinRadius;
+			}
+
+			queue.push(Vox(y, centricity, smallestRadius));
         }
     }
 
@@ -153,31 +346,31 @@ void regionGrowing(Image::pointer volume, Segmentation::pointer segmentation, co
 			neighborList.push_back(Vector3i(a,b,c));
 		}}}
 
-		float Vnew = spacing*grow(seedSeg, neighborList, voxels, data, threshold, width, height, depth, VT, volumeIncreaseLimit, volumeMinimum);
+		float Vnew = spacing*grow(seedSeg, neighborList, voxels, data, maxAirwayDensity, width, height, depth, VT, volumeIncreaseLimit, volumeMinimum);
 		// Loop until explosion is detected
-		do {
-			VT = Vnew;
-			threshold += deltaT;
-			// Growing is stopped if it goes over the volumeIncreaseLimit
-			Vnew = spacing*grow(seedSeg, neighborList, voxels, data, threshold, width, height, depth, VT, volumeIncreaseLimit, volumeMinimum);
-			Reporter::info() << "using threshold: " << threshold << Reporter::end();
-			Reporter::info() << "gives volume size: " << Vnew << Reporter::end();
-			Reporter::info() << "volume diff: " << Vnew - VT << Reporter::end();
-		} while(Vnew-VT < volumeIncreaseLimit || Vnew < volumeMinimum);
+		// do {
+		// 	VT = Vnew;
+		// 	threshold += deltaT;
+		// 	// Growing is stopped if it goes over the volumeIncreaseLimit
+		// 	Vnew = spacing*grow(seedSeg, neighborList, voxels, data, threshold, width, height, depth, VT, volumeIncreaseLimit, volumeMinimum);
+		// 	Reporter::info() << "using threshold: " << threshold << Reporter::end();
+		// 	Reporter::info() << "gives volume size: " << Vnew << Reporter::end();
+		// 	Reporter::info() << "volume diff: " << Vnew - VT << Reporter::end();
+		// } while(Vnew-VT < volumeIncreaseLimit || Vnew < volumeMinimum);
 
-		float explosionVolume = Vnew;
-		Reporter::info() << "Ungrowing.." << Reporter::end();
-		threshold -= deltaT;
-		VT = Vnew;
+		// float explosionVolume = Vnew;
+		// Reporter::info() << "Ungrowing.." << Reporter::end();
+		// threshold -= deltaT;
+		// VT = Vnew;
 
-		// Ungrow one step
-		voxels.clear();
-		voxels.push_back(seed);
-		memset(seedSeg, 0, width*height*depth);
-		seedSeg[seed.x() + seed.y()*width + seed.z()*width*height] = 1;
-		VT = spacing*grow(seedSeg, neighborList, voxels, data, threshold, width, height, depth, VT, std::numeric_limits<float>::max(), volumeMinimum);
-		Reporter::info() << "using threshold: " << threshold << Reporter::end();
-		Reporter::info() << "gives volume size: " << VT << Reporter::end();
+		// // Ungrow one step
+		// voxels.clear();
+		// voxels.push_back(seed);
+		// memset(seedSeg, 0, width*height*depth);
+		// seedSeg[seed.x() + seed.y()*width + seed.z()*width*height] = 1;
+		// VT = spacing*grow(seedSeg, neighborList, voxels, data, threshold, width, height, depth, VT, std::numeric_limits<float>::max(), volumeMinimum);
+		// Reporter::info() << "using threshold: " << threshold << Reporter::end();
+		// Reporter::info() << "gives volume size: " << VT << Reporter::end();
 
 		std::cout << "Combining segmentations...\n";
 

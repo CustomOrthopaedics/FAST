@@ -26,6 +26,9 @@ class FAST_EXPORT  AirwaySegmentation : public SegmentationAlgorithm {
 		static Vector3i findSeedVoxel(SharedPointer<Image> volume);
 		SharedPointer<Image> convertToHU(SharedPointer<Image> image);
 		void morphologicalClosing(SharedPointer<Segmentation> segmentation);
+		// static int getIndex(Vector3i point, int height, int width);
+		// static float findDistanceToWall(short *vol, Vector3f dir, Vector3i startPoint, int height, int width);
+		// static bool canSpawnNewVoxel(short *vol, Vector3i point, int height, int width, float maxRadius);
 
 		std::vector<Vector3i> mSeedPoints;
 		float mSmoothingSigma = 0.5;
