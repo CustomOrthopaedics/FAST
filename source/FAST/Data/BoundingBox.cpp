@@ -258,17 +258,17 @@ BoundingBoxSetOpenGLAccess::pointer BoundingBoxSet::getOpenGLAccess(
 #endif
     } else {
         if(!mVBODataIsUpToDate) {
-			QGLFunctions *fun = Window::getMainGLContext()->functions();
-            // Update VBO/EBO data from host
-            // Coordinates
-            fun->glBindBuffer(GL_ARRAY_BUFFER, mCoordinateVBO);
-            fun->glBufferData(GL_ARRAY_BUFFER, mCoordinates.size()*sizeof(float), mCoordinates.data(), GL_STATIC_DRAW);
-            // Lines
-            fun->glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, mLineEBO);
-            fun->glBufferData(GL_ELEMENT_ARRAY_BUFFER, mLines.size()*sizeof(uint), mLines.data(), GL_STATIC_DRAW);
-            // Labels
-            fun->glBindBuffer(GL_ARRAY_BUFFER, m_labelVBO);
-            fun->glBufferData(GL_ARRAY_BUFFER, m_labels.size()*sizeof(uchar), m_labels.data(), GL_STATIC_DRAW);
+			// QGLFunctions *fun = Window::getMainGLContext()->functions();
+            // // Update VBO/EBO data from host
+            // // Coordinates
+            // fun->glBindBuffer(GL_ARRAY_BUFFER, mCoordinateVBO);
+            // fun->glBufferData(GL_ARRAY_BUFFER, mCoordinates.size()*sizeof(float), mCoordinates.data(), GL_STATIC_DRAW);
+            // // Lines
+            // fun->glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, mLineEBO);
+            // fun->glBufferData(GL_ELEMENT_ARRAY_BUFFER, mLines.size()*sizeof(uint), mLines.data(), GL_STATIC_DRAW);
+            // // Labels
+            // fun->glBindBuffer(GL_ARRAY_BUFFER, m_labelVBO);
+            // fun->glBufferData(GL_ARRAY_BUFFER, m_labels.size()*sizeof(uchar), m_labels.data(), GL_STATIC_DRAW);
         }
     }
 	if(type == ACCESS_READ_WRITE) {
