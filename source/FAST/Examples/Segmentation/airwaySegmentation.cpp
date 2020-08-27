@@ -97,6 +97,7 @@ int main(int argc, char** argv) {
 	auto segmentation = AirwaySegmentation::New();
 	segmentation->setInputConnection(importer->getOutputPort());
 	segmentation->setSmoothing(parser.get<float>("smoothing"));
+	segmentation->setVoxSpacing(spacing);
 
 	auto initialSeeds = segData["tracheal_points_mm"]["initial"];
 	auto additionalSeeds = segData["tracheal_points_mm"]["additional"];

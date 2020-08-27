@@ -6,74 +6,18 @@
 #include <queue>
 #include <vector>
 #include <algorithm>
+#include <math.h>
 #include <boost/accumulators/statistics/variance.hpp>
 #include <boost/accumulators/accumulators.hpp>
 #include <boost/accumulators/statistics/stats.hpp>
 #include <boost/accumulators/statistics/mean.hpp>
 #include <boost/accumulators/statistics/moment.hpp>
 
-
-// def _findCentricity(startPoint, startValue, interpolating_function):
-//     smallestDiameter = 99999.9
-//     rayPairs = []
-//     for direction in icohalf:
-//         # find walls in positive and negative directions:
-//         endDistance = _findDistanceToWall(
-//             direction, startPoint, startValue, interpolating_function)
-//         endDistanceOpp = _findDistanceToWall(-direction,
-//                                              startPoint, startValue,
-//                                              interpolating_function)
-
-//         diameter = endDistance + endDistanceOpp
-//         if diameter < smallestDiameter:
-//             smallestDiameter = diameter
-
-//         # store all the Radii by diameter
-//         heapq.heappush(rayPairs, (diameter, [endDistance, endDistanceOpp]))
-
-//     # find lower half of the diameters (diameters below median)
-//     halfRayCount = int(len(rayPairs)/2)
-//     rayArray = np.array([heapq.heappop(rayPairs)[1]
-//                          for i in range(halfRayCount)])
-
-//     # calculate centricity as c(x) = 1 - (stdDev of radii / mean of radii)
-//     radiiMean = np.mean(rayArray)
-//     centricity = 1 - (np.std(rayArray) / radiiMean)
-
-//     # (note: ideal centricity is 1, decreases to < 0 as less
-//     # centered or less cylindrical surroundings)
-//     return centricity, radiiMean, smallestDiameter / 2.0, rayArray.min() > 5.0
-
-
-// def _sampleAlongRay(ray, distance, start, my_interpolating_function):
-//     # ray and start are numpy arrays
-//     # distance is scalar
-//     # img3d is 3D numpy array
-//     endPoint = start + (ray * distance)
-//     # Use trilinear interpolation
-//     endValue = my_interpolating_function(endPoint)
-//     return endValue  # endValue[0]
-
-
-// def _findDistanceToWall(direction, startPoint, startValue,
-//                         interpolating_function):
-//     #    sample repeatedly along ray
-//     sampleDistance = dr
-//     #    stop when max is reached
-//     while sampleDistance < rMax:
-//         endValue = _sampleAlongRay(
-//             direction, sampleDistance, startPoint, interpolating_function)
-//         #    stop when delta W is reached (delta of startValue and endValue)
-//         if endValue - startValue > deltaW:
-//             break
-//         sampleDistance += dr
-//     #    get distance endPoint - startPoint (magnitude of ray)
-//     return sampleDistance
-
 using namespace boost::accumulators;
 
 namespace fast {
 
+// TODO: change icosphere directions to match spacing 
 Vector3f icohalf[21] = {
     Vector3f(0.276388, 0.447220, 0.850649),
     Vector3f(-0.723607, 0.447220, 0.525725),
@@ -116,38 +60,88 @@ struct Vox {
 	}
 };
 
-float deltaW = 200;
+float deltaW = 200.0;
 float dr = 0.5;
 float rMax = 20.0;
 float maxRadiusIncrease = 2.4;
 float maxAirwayDensity = -550.0;
 
-static int getIndex(Vector3i point, int height, int width, int depth) {
+// https://stackoverflow.com/questions/19271568/trilinear-interpolation
+float interpolate1D(float v1, float v2, float x){
+    return v1*(1-x) + v2*x;
+}
+
+float interpolate2D(float v1, float v2, float v3, float v4, float x, float y) {
+    float s = interpolate1D(v1, v2, x);
+    float t = interpolate1D(v3, v4, x);
+    return interpolate1D(s, t, y);
+}
+
+float interpolate3D(float *verts, Vector3f point) {
+    float s = interpolate2D(verts[0], verts[4], verts[2], verts[6], point.x(), point.y());
+    float t = interpolate2D(verts[1], verts[5], verts[3], verts[7], point.x(), point.y());
+    return interpolate1D(s, t, point.z());
+}
+
+int AirwaySegmentation::getIndex(Vector3i point) {
+	// FIXME: index overflow should be detected outside of this function
+	if(point.x() >= width || point.y() >= height || point.z() >= depth) {
+		// std::cout << "index out of range! " << point.transpose() << std::endl;
+	}
+
 	int idx = point.x() + point.y()*width + point.z()*width*height;
 	return idx < depth*width*height - 1 ? idx : depth*width*height - 1;
 }
 
-static float findDistanceToWall(short *vol, Vector3f dir, Vector3i startPoint, int height, int width, int depth) {
-	int startVal = vol[getIndex(startPoint, height, width, depth)];
-	// std::cout << "start val: " << startVal << std::endl;
+static float calcDistance(Vector3f start, Vector3f end) {
+	return sqrt(pow(end.x() - start.x(), 2) + pow(end.y() - start.y(), 2) + pow(end.z() - start.z(), 2));
+}
+
+int AirwaySegmentation::interp3D(short *vol, Vector3f point) {
+	Vector3i pointIdx(floor(point.x()), floor(point.y()), floor(point.z()));
+
+	float xPoint = point.x() - floor(point.x());
+	float yPoint = point.y() - floor(point.y());
+	float zPoint = point.z() - floor(point.z());
+	Vector3f localPoint(xPoint, yPoint, zPoint);
+
+	float vals[8];
+	float *verts = vals;
+	int valIdx = 0;
+
+	for (int x = 0; x <= 1; ++x) {
+		for (int y = 0; y <= 1; ++y) {
+			for (int z = 0; z <= 1; ++z) {
+				int voxValue = vol[getIndex(Vector3i(x, y, z) + pointIdx)];
+				vals[valIdx++] = voxValue;
+			}
+		}
+	}
+
+	return interpolate3D(verts, localPoint);
+}
+
+float AirwaySegmentation::findDistanceToWall(short *vol, Vector3f dir, Vector3i startPoint) {
+	int startVal = vol[getIndex(startPoint)];
 	int endVal = 0;
 	float distance = 0.0;
 
 	do {
 		distance += dr;
-		Vector3i endPoint(std::round(dir.x()*distance + 0.5), std::round(dir.y()*distance + 0.5), std::round(dir.z()*distance + 0.5));
-		endPoint = startPoint + endPoint;
-		endVal = vol[getIndex(endPoint, height, width, depth)];
-	} while(endVal - startVal < deltaW && distance <= rMax);
+		Vector3f endPoint = (dir * distance) + Vector3f((float)startPoint.x(), (float)startPoint.y(), (float)startPoint.z());
+		endVal = interp3D(vol, endPoint);
+	} while(endVal - startVal < deltaW && distance < rMax);
 
-	return distance;
+	float mmPerVx = calcDistance(Vector3f(0, 0, 0), voxSpacing);
+
+	return distance * mmPerVx;
 }
 
-static std::vector<float> getVoxelData(short *vol, Vector3i point, int height, int width, int depth) {
+std::vector<float> AirwaySegmentation::getVoxelData(short *vol, Vector3i point) {
 	std::vector<float> diameters;
 	for (int i = 0; i < 21; i++) {
-		float dist1 = findDistanceToWall(vol, icohalf[i], point, height, width, depth);
-		float dist2 = findDistanceToWall(vol, -1 * icohalf[i], point, height, width, depth);
+		float dist1 = findDistanceToWall(vol, icohalf[i].cwiseQuotient(voxSpacing), point);
+		float dist2 = findDistanceToWall(vol, -1.0 * icohalf[i].cwiseQuotient(voxSpacing), point);
 
 		diameters.push_back(dist1 + dist2);
 	}
@@ -246,7 +240,7 @@ Vector3i AirwaySegmentation::findSeedVoxel(Image::pointer volume) {
     return currentSeed;
 }
 
-static int grow(uchar* segmentation, std::vector<Vector3i> neighbors, std::vector<Vector3i>& voxels, short* data, float threshold, int width, int height, int depth, float previousVolume, float volumeIncreaseLimit, int volumeMinimum) {
+int AirwaySegmentation::grow(uchar* segmentation, std::vector<Vector3i> neighbors, std::vector<Vector3i>& voxels, short* data, float threshold, int width, int height, int depth, float previousVolume, float volumeIncreaseLimit, int volumeMinimum) {
     std::priority_queue<Vox> queue;
     // TODO voxels coming in here consists of all voxels, should only need to add the front..
     for(Vector3i voxel : voxels) {
@@ -288,7 +282,7 @@ static int grow(uchar* segmentation, std::vector<Vector3i> neighbors, std::vecto
 			segmentation[y.x() + y.y()*width + y.z()*width*height] = 1;
 			voxels.push_back(y);
 
-			std::vector<float> voxData = getVoxelData(data, y, height, width, depth);
+			std::vector<float> voxData = getVoxelData(data, y);
 			float centricity = voxData[0];
 			float radiiMean = voxData[1];
 			float smallestRadius = voxData[2];
@@ -309,7 +303,7 @@ static int grow(uchar* segmentation, std::vector<Vector3i> neighbors, std::vecto
     return voxels.size();
 }
 
-void regionGrowing(Image::pointer volume, Segmentation::pointer segmentation, const std::vector<Vector3i> seeds) {
+void AirwaySegmentation::regionGrowing(Image::pointer volume, Segmentation::pointer segmentation, const std::vector<Vector3i> seeds) {
     const int width = volume->getWidth();
     const int height = volume->getHeight();
     const int depth = volume->getDepth();
@@ -420,9 +414,9 @@ Image::pointer AirwaySegmentation::convertToHU(Image::pointer image) {
 }
 
 void AirwaySegmentation::morphologicalClosing(Segmentation::pointer segmentation) {
-	int width = segmentation->getWidth();
-	int height = segmentation->getHeight();
-	int depth = segmentation->getDepth();
+	width = segmentation->getWidth();
+	height = segmentation->getHeight();
+	depth = segmentation->getDepth();
 
 	// TODO need support for no 3d write
 	OpenCLDevice::pointer device = std::dynamic_pointer_cast<OpenCLDevice>(getMainDevice());
@@ -480,6 +474,10 @@ void AirwaySegmentation::morphologicalClosing(Segmentation::pointer segmentation
 
 void AirwaySegmentation::execute() {
 	Image::pointer image = getInputData<Image>();
+
+	width = image->getWidth();
+    height = image->getHeight();
+    depth = image->getDepth();
 
 	// Convert to signed HU if unsigned
 	if(image->getDataType() == TYPE_UINT16) {
@@ -541,6 +539,10 @@ void AirwaySegmentation::addSeedPoint(Vector3i seed) {
 
 void AirwaySegmentation::setSmoothing(float sigma) {
 	mSmoothingSigma = sigma;
+}
+
+void AirwaySegmentation::setVoxSpacing(Vector3f spacing) {
+	voxSpacing = spacing;
 }
 
 }
