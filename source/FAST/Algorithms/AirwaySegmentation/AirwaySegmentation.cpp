@@ -17,8 +17,7 @@ using namespace boost::accumulators;
 
 namespace fast {
 
-// TODO: change icosphere directions to match spacing 
-Vector3f icohalf[21] = {
+Vector3f icohalfMm[21] = {
     Vector3f(0.276388, 0.447220, 0.850649),
     Vector3f(-0.723607, 0.447220, 0.525725),
     Vector3f(-0.723607, 0.447220, -0.525725),
@@ -42,29 +41,12 @@ Vector3f icohalf[21] = {
     Vector3f(0.162456, 0.850654, -0.499995)
 };
 
-
-// https://stackoverflow.com/a/5712235
-struct Vox {
-	Vector3i point;
-	float centricity;
-	float minRadius;
-
-	Vox(Vector3i p, float cent, float rad) {
-		point = p;
-		centricity = cent;
-		minRadius = rad;
-	}
-
-	bool operator <(const struct Vox& other) const {
-		return centricity < other.centricity;
-	}
-};
-
 float deltaW = 200.0;
 float dr = 0.5;
 float rMax = 20.0;
-float maxRadiusIncrease = 2.4;
+float maxRadiusIncrease = 2.0;
 float maxAirwayDensity = -550.0;
+int maxVoxelVal = 1000;
 
 // https://stackoverflow.com/questions/19271568/trilinear-interpolation
 float interpolate1D(float v1, float v2, float x){
@@ -84,13 +66,11 @@ float interpolate3D(float *verts, Vector3f point) {
 }
 
 int AirwaySegmentation::getIndex(Vector3i point) {
-	// FIXME: index overflow should be detected outside of this function
-	if(point.x() >= width || point.y() >= height || point.z() >= depth) {
-		// std::cout << "index out of range! " << point.transpose() << std::endl;
-	}
+	return point.x() + point.y()*width + point.z()*width*height;
+}
 
-	int idx = point.x() + point.y()*width + point.z()*width*height;
-	return idx < depth*width*height - 1 ? idx : depth*width*height - 1;
+int AirwaySegmentation::getIndex(int x, int y, int z) {
+	return x + y*width + z*width*height;
 }
 
 static float calcDistance(Vector3f start, Vector3f end) {
@@ -112,7 +92,14 @@ int AirwaySegmentation::interp3D(short *vol, Vector3f point) {
 	for (int x = 0; x <= 1; ++x) {
 		for (int y = 0; y <= 1; ++y) {
 			for (int z = 0; z <= 1; ++z) {
-				int voxValue = vol[getIndex(Vector3i(x, y, z) + pointIdx)];
+				Vector3i neighborIdx = Vector3i(x, y, z) + pointIdx;
+
+				// reached edge of volume, return max voxel value to stop ray from growing any further
+				if(neighborIdx.x() >= width || neighborIdx.y() >= height || neighborIdx.z() >= depth) {
+					return maxVoxelVal;
+				}
+
+				int voxValue = vol[getIndex(neighborIdx)];
 				vals[valIdx++] = voxValue;
 			}
 		}
@@ -132,22 +119,21 @@ float AirwaySegmentation::findDistanceToWall(short *vol, Vector3f dir, Vector3i 
 		endVal = interp3D(vol, endPoint);
 	} while(endVal - startVal < deltaW && distance < rMax);
 
-	float mmPerVx = calcDistance(Vector3f(0, 0, 0), voxSpacing);
-
 	return distance * mmPerVx;
 }
 
-std::vector<float> AirwaySegmentation::getVoxelData(short *vol, Vector3i point) {
+Voxel AirwaySegmentation::getVoxelData(short *vol, Vector3i point) {
 	std::vector<float> diameters;
 	for (int i = 0; i < 21; i++) {
-		float dist1 = findDistanceToWall(vol, icohalf[i].cwiseQuotient(voxSpacing), point);
-		float dist2 = findDistanceToWall(vol, -1.0 * icohalf[i].cwiseQuotient(voxSpacing), point);
+		float dist1 = findDistanceToWall(vol, icohalfVx[i], point);
+		float dist2 = findDistanceToWall(vol, -1.0 * icohalfVx[i], point);
 
 		diameters.push_back(dist1 + dist2);
 	}
 
 	std::sort(diameters.begin(), diameters.end());
 
+	// find lower half of diameters
 	accumulator_set<float, stats<tag::variance> > acc;
 	for (int i = 0; i < 10; i++) {
 		acc(diameters[i]);
@@ -159,7 +145,7 @@ std::vector<float> AirwaySegmentation::getVoxelData(short *vol, Vector3i point) 
 	float centricity = 1 - (radiStdDev / radiiMean);
 	float smallestRadius = diameters[0] / 2.0;
 
-	return std::vector<float>{centricity, radiiMean, smallestRadius};
+	return Voxel(point, centricity, smallestRadius, radiiMean);
 }
 
 AirwaySegmentation::AirwaySegmentation() {
@@ -240,146 +226,111 @@ Vector3i AirwaySegmentation::findSeedVoxel(Image::pointer volume) {
     return currentSeed;
 }
 
-int AirwaySegmentation::grow(uchar* segmentation, std::vector<Vector3i> neighbors, std::vector<Vector3i>& voxels, short* data, float threshold, int width, int height, int depth, float previousVolume, float volumeIncreaseLimit, int volumeMinimum) {
-    std::priority_queue<Vox> queue;
-    // TODO voxels coming in here consists of all voxels, should only need to add the front..
-    for(Vector3i voxel : voxels) {
-        queue.push(Vox(voxel, 1.0, 10000.0));
-    }
+int AirwaySegmentation::grow(Vector3i seed, uchar* mask, std::vector<Vector3i> neighbors, short* data, float threshold) {
+    std::priority_queue<Voxel> queue;
 
 	float pathMinRadius = 9999.0;
+	queue.push(Voxel(seed, 1.0, pathMinRadius, 1.0));
 
-    while (!queue.empty() && (voxels.size() - previousVolume < volumeIncreaseLimit || voxels.size() < volumeMinimum)) {
-        Vox currVox = queue.top();
+	int maskSize = 0;
+	int volSize = height * width * depth;
+
+	// stop at half vol size in case of major leaks
+    while (!queue.empty() && maskSize < volSize / 2) {
+        Voxel currVox = queue.top();
         queue.pop();
 
 		pathMinRadius = currVox.minRadius;
 
 		Vector3i x = currVox.point;
-        segmentation[x.x() + x.y()*width + x.z()*width*height] = 1; // TODO is this needed?
+        mask[getIndex(x)] = 1;
 
         // Add 26 neighbors
         for (int i = 0; i < 25; ++i) {
         	Vector3i neighbor = neighbors[i];
             Vector3i y(x.x()+neighbor.x(), x.y()+neighbor.y(), x.z()+neighbor.z());
+			int volIdx = getIndex(y);
 
 			// outside of volume
-			if(y.x() < 0 || y.y() < 0 || y.z() < 0 ||
-				y.x() >= width || y.y() >= height || y.z() >= depth) {
+			if(y.x() < 0 || y.y() < 0 || y.z() < 0 || y.x() >= width || y.y() >= height || y.z() >= depth) {
                 continue;
             }
 
-			// voxel already in mask
-			if (segmentation[y.x() + y.y()*width + y.z()*width*height] != 0) {
+			// vox already in mask
+			if (mask[volIdx] != 0) {
 				continue;
 			}
 
 			// above threshold
-			if (data[y.x() + y.y()*width + y.z()*width*height] > threshold) {
+			if (data[volIdx] > threshold) {
 				continue;
 			}
 
-			segmentation[y.x() + y.y()*width + y.z()*width*height] = 1;
-			voxels.push_back(y);
+			// add vox to mask
+			mask[volIdx] = 1;
+			maskSize++;
 
-			std::vector<float> voxData = getVoxelData(data, y);
-			float centricity = voxData[0];
-			float radiiMean = voxData[1];
-			float smallestRadius = voxData[2];
+			Voxel vox = getVoxelData(data, y);
 
 			// radius is too large, voxel may be leaking
-			if (radiiMean > pathMinRadius * maxRadiusIncrease) {
+			if (vox.meanRadii > pathMinRadius * maxRadiusIncrease) {
 				continue;
 			}
 
-			if (pathMinRadius < smallestRadius) {
-				smallestRadius = pathMinRadius;
+			if (pathMinRadius < vox.minRadius) {
+				vox.minRadius = pathMinRadius;
 			}
 
-			queue.push(Vox(y, centricity, smallestRadius));
+			queue.push(vox);
         }
     }
 
-    return voxels.size();
+    return maskSize;
 }
 
 void AirwaySegmentation::regionGrowing(Image::pointer volume, Segmentation::pointer segmentation, const std::vector<Vector3i> seeds) {
-    const int width = volume->getWidth();
-    const int height = volume->getHeight();
-    const int depth = volume->getDepth();
 	segmentation->createFromImage(volume);
-	ImageAccess::pointer access = volume->getImageAccess(ACCESS_READ);
-	short* data = (short*)access->get();
-	ImageAccess::pointer access2 = segmentation->getImageAccess(ACCESS_READ_WRITE);
-	uchar* segmentationData = (uchar*)access2->get();
-	memset(segmentationData, 0, width*height*depth);
-	uchar* seedSeg = (uchar*) malloc(width*height*depth);
+	ImageAccess::pointer volAccess = volume->getImageAccess(ACCESS_READ);
+	short* volData = (short*)volAccess->get();
 
-	for (int i = 0; i < seeds.size(); ++i) {
-		std::vector<Vector3i> voxels; // All voxels currently in segmentation
-		Vector3i seed = seeds[i];
-		memset(seedSeg, 0, width*height*depth);
-		seedSeg[seed.x() + seed.y()*width + seed.z()*width*height] = 1;
-		voxels.push_back(seed);
-		float threshold = data[seed.x() + seed.y()*width + seed.z()*width*height];
-		const float volumeIncreaseLimit = 20000.0f; // how much the volume is allowed to increase per step
-		const float volumeMinimum = 100000.0f; // minimum volume size of airways
-		float VT = 0.0f; // volume with given threshold
-		float deltaT = 2.0f;
-		float spacing = 1.0f;
+	ImageAccess::pointer segAccess = segmentation->getImageAccess(ACCESS_READ_WRITE);
+	uchar* segData = (uchar*)segAccess->get();
+	memset(segData, 0, width*height*depth);
 
-		std::cout << "Segmenting seed: " << seed << std::endl;
+	uchar* seedMask = (uchar*) malloc(width*height*depth);
 
-		// Create neighbor list
-		std::vector<Vector3i> neighborList;
-		for(int a = -1; a < 2; a++) {
-		for(int b = -1; b < 2; b++) {
-		for(int c = -1; c < 2; c++) {
-			if(a == 0 && b == 0 && c == 0)
-				continue;
-			neighborList.push_back(Vector3i(a,b,c));
-		}}}
+	// Create neighbor list
+	std::vector<Vector3i> neighborList;
+	for(int a = -1; a < 2; a++) {
+	for(int b = -1; b < 2; b++) {
+	for(int c = -1; c < 2; c++) {
+		if(a == 0 && b == 0 && c == 0)
+			continue;
+		neighborList.push_back(Vector3i(a,b,c));
+	}}}
 
-		float Vnew = spacing*grow(seedSeg, neighborList, voxels, data, maxAirwayDensity, width, height, depth, VT, volumeIncreaseLimit, volumeMinimum);
-		// Loop until explosion is detected
-		// do {
-		// 	VT = Vnew;
-		// 	threshold += deltaT;
-		// 	// Growing is stopped if it goes over the volumeIncreaseLimit
-		// 	Vnew = spacing*grow(seedSeg, neighborList, voxels, data, threshold, width, height, depth, VT, volumeIncreaseLimit, volumeMinimum);
-		// 	Reporter::info() << "using threshold: " << threshold << Reporter::end();
-		// 	Reporter::info() << "gives volume size: " << Vnew << Reporter::end();
-		// 	Reporter::info() << "volume diff: " << Vnew - VT << Reporter::end();
-		// } while(Vnew-VT < volumeIncreaseLimit || Vnew < volumeMinimum);
+	for (Vector3i seed : seeds) {
+		// reset mask
+		memset(seedMask, 0, width*height*depth);
 
-		// float explosionVolume = Vnew;
-		// Reporter::info() << "Ungrowing.." << Reporter::end();
-		// threshold -= deltaT;
-		// VT = Vnew;
+		Reporter::info() << "Segmenting Seed: " << seed.transpose() << Reporter::end();
 
-		// // Ungrow one step
-		// voxels.clear();
-		// voxels.push_back(seed);
-		// memset(seedSeg, 0, width*height*depth);
-		// seedSeg[seed.x() + seed.y()*width + seed.z()*width*height] = 1;
-		// VT = spacing*grow(seedSeg, neighborList, voxels, data, threshold, width, height, depth, VT, std::numeric_limits<float>::max(), volumeMinimum);
-		// Reporter::info() << "using threshold: " << threshold << Reporter::end();
-		// Reporter::info() << "gives volume size: " << VT << Reporter::end();
+		// perform region growing, store results in seedMask
+		grow(seed, seedMask, neighborList, volData, maxAirwayDensity);
 
-		std::cout << "Combining segmentations...\n";
-
+		// add mask to final seg
 		for (int x = 0; x < width; ++x) {
 			for (int y = 0; y < height; ++y) {
 				for (int z = 0; z < depth; ++z) {
-					int index = x + y*width + z*width*height;
-					if (seedSeg[index] == 1) {
-						segmentationData[index] = 1;
+					int index = getIndex(x, y, z);
+					if (seedMask[index] == 1) {
+						segData[index] = 1;
 					}
 				}
 			}
 		}
 	}
-	free(seedSeg);
+	free(seedMask);
 }
 
 Image::pointer AirwaySegmentation::convertToHU(Image::pointer image) {
@@ -543,6 +494,14 @@ void AirwaySegmentation::setSmoothing(float sigma) {
 
 void AirwaySegmentation::setVoxSpacing(Vector3f spacing) {
 	voxSpacing = spacing;
+	
+	// distort icosphere to match voxel aspect ratio
+	for (int i = 0; i < 21; i++) {
+		icohalfVx[i] = icohalfMm[i];
+		icohalfVx[i] = icohalfVx[i].cwiseQuotient(spacing);
+	}
+
+	mmPerVx = calcDistance(Vector3f(0.0, 0.0, 0.0), spacing);
 }
 
 }

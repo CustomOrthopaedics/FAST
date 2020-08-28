@@ -5,6 +5,26 @@
 
 namespace fast {
 
+struct Voxel {
+	Vector3i point;
+	float centricity;
+	float minRadius;
+	float meanRadii;
+
+	Voxel(Vector3i p, float cent, float minRad, float meanRad) {
+		point = p;
+		centricity = cent;
+		minRadius = minRad;
+		meanRadii = meanRad;
+	}
+
+	// https://stackoverflow.com/a/5712235
+	// overload operator so Voxel can be used in priority queue
+	bool operator <(const struct Voxel& other) const {
+		return centricity < other.centricity;
+	}
+};
+
 class Image;
 class Segmentation;
 
@@ -29,9 +49,10 @@ class FAST_EXPORT  AirwaySegmentation : public SegmentationAlgorithm {
 		void morphologicalClosing(SharedPointer<Segmentation> segmentation);
 		int interp3D(short *vol, Vector3f point);
 		int getIndex(Vector3i);
+		int getIndex(int x, int y, int z);
 		float findDistanceToWall(short *vol, Vector3f dir, Vector3i startPoint);
-		std::vector<float> getVoxelData(short *vol, Vector3i point);
-		int grow(uchar* segmentation, std::vector<Vector3i> neighbors, std::vector<Vector3i>& voxels, short* data, float threshold, int width, int height, int depth, float previousVolume, float volumeIncreaseLimit, int volumeMinimum);
+		Voxel getVoxelData(short *vol, Vector3i point);
+		int grow(Vector3i seed, uchar* mask, std::vector<Vector3i> neighbors, short* data, float threshold);
 		void regionGrowing(Image::pointer volume, Segmentation::pointer segmentation, const std::vector<Vector3i> seeds);
 
 		std::vector<Vector3i> mSeedPoints;
@@ -41,6 +62,8 @@ class FAST_EXPORT  AirwaySegmentation : public SegmentationAlgorithm {
 		int height;
 		int width;
 		int depth;
+		Vector3f icohalfVx[21];
+		float mmPerVx = 1.0;
 };
 
 }
