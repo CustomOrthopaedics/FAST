@@ -15,6 +15,13 @@
 
 using namespace boost::accumulators;
 
+float deltaW = 200.0;
+float dr = 0.5;
+float rMax = 20.0;
+float maxRadiusIncrease = 2.0;
+float maxAirwayDensity = -550.0;
+int maxVoxelVal = 1000;
+
 namespace fast {
 
 Vector3f icohalfMm[21] = {
@@ -40,13 +47,6 @@ Vector3f icohalfMm[21] = {
     Vector3f(-0.425323, 0.850654, -0.309011),
     Vector3f(0.162456, 0.850654, -0.499995)
 };
-
-float deltaW = 200.0;
-float dr = 0.5;
-float rMax = 20.0;
-float maxRadiusIncrease = 2.0;
-float maxAirwayDensity = -550.0;
-int maxVoxelVal = 1000;
 
 // https://stackoverflow.com/questions/19271568/trilinear-interpolation
 float interpolate1D(float v1, float v2, float x){
@@ -227,6 +227,7 @@ Vector3i AirwaySegmentation::findSeedVoxel(Image::pointer volume) {
 }
 
 int AirwaySegmentation::grow(Vector3i seed, uchar* mask, std::vector<Vector3i> neighbors, short* data, float threshold) {
+	// max priority queue based on centricity of voxel
     std::priority_queue<Voxel> queue;
 
 	float pathMinRadius = 9999.0;
@@ -249,12 +250,13 @@ int AirwaySegmentation::grow(Vector3i seed, uchar* mask, std::vector<Vector3i> n
         for (int i = 0; i < 25; ++i) {
         	Vector3i neighbor = neighbors[i];
             Vector3i y(x.x()+neighbor.x(), x.y()+neighbor.y(), x.z()+neighbor.z());
-			int volIdx = getIndex(y);
 
 			// outside of volume
 			if(y.x() < 0 || y.y() < 0 || y.z() < 0 || y.x() >= width || y.y() >= height || y.z() >= depth) {
                 continue;
             }
+
+			int volIdx = getIndex(y);
 
 			// vox already in mask
 			if (mask[volIdx] != 0) {
@@ -277,6 +279,7 @@ int AirwaySegmentation::grow(Vector3i seed, uchar* mask, std::vector<Vector3i> n
 				continue;
 			}
 
+			// keep track of smallest radius encountered
 			if (pathMinRadius < vox.minRadius) {
 				vox.minRadius = pathMinRadius;
 			}
@@ -448,33 +451,17 @@ void AirwaySegmentation::execute() {
         image = port->getNextFrame<Image>();
     }
 
-	Segmentation::pointer segmentation = getOutputData<Segmentation>();
-	
-	if (mSeedPoints.size() > 0) {
-		for (int i = 0; i < mSeedPoints.size(); ++i) {
-			Vector3i seed = mSeedPoints[i];
-
-			// Validate seed point
-			if(seed.x() < 0 || seed.y() < 0 || seed.z() < 0 ||
-					seed.x() >= image->getWidth() || seed.y() >= image->getHeight() || seed.z() >= image->getDepth()) {
-				throw Exception("Seed point was not inside image in AirwaySegmentation");
-			}
+	for (Vector3i seed : mSeedPoints) {
+		// Validate seed point
+		if(seed.x() < 0 || seed.y() < 0 || seed.z() < 0 ||
+		   seed.x() >= image->getWidth() || seed.y() >= image->getHeight() || seed.z() >= image->getDepth()) {
+			throw Exception("Seed point was not inside image in AirwaySegmentation");
 		}
-
-		regionGrowing(image, segmentation, mSeedPoints);
-	} else {
-		Vector3i seed = findSeedVoxel(image);
-
-		if(seed == Vector3i::Zero()) {
-			throw Exception("No seed found.");
-		}
-
-		autoSeed = seed;
-
-		reportInfo() << "Using seed point: " << seed.transpose() << reportEnd();
-
-		regionGrowing(image, segmentation, std::vector<Vector3i>{seed});
 	}
+
+	Segmentation::pointer segmentation = getOutputData<Segmentation>();
+
+	regionGrowing(image, segmentation, mSeedPoints);
 
 	// Do morphological closing to remove holes in segmentation
 	morphologicalClosing(segmentation);

@@ -37,11 +37,7 @@ Vector3f vxToMm(Vector3i seed, Vector3f origin, Vector3f spacing) {
 int main(int argc, char** argv) {
     Reporter::setGlobalReportMethod(Reporter::COUT); // TODO remove
 	CommandLineParser parser("Airway segmentation");
-	parser.addVariable("scan", false, "scan.mhd file");
     parser.addVariable("smoothing", "0.5", "How much smoothing to apply before segmentation");
-    parser.addVariable("seed", false, "Manual seed point coordinate (--seed x,y,z)");
-    parser.addVariable("export_segmentation", false, "Filename to export segmentation volume to. Example: segmentation.mhd");
-    parser.addVariable("export_centerline", false, "Filename to export centerline to. Example: centerline.vtk");
 	parser.addVariable("seg_config", true, "seg config .json");
 	parser.parse(argc, argv);
 
@@ -101,13 +97,11 @@ int main(int argc, char** argv) {
 
 	auto initialSeeds = segData["tracheal_points_mm"]["initial"];
 	auto additionalSeeds = segData["tracheal_points_mm"]["additional"];
-	for (int i = 0; i < initialSeeds.size(); ++i) {
-		auto seed = initialSeeds[i];
+	for (auto seed : initialSeeds) {
 		Vector3i seedVx = mmToVx(Vector3f(seed[0], seed[1], seed[2]), offset, spacing);
 		segmentation->addSeedPoint(seedVx);
 	}
-	for (int i = 0; i < additionalSeeds.size(); ++i) {
-		auto seed = additionalSeeds[i];
+	for (auto seed : additionalSeeds) {
 		Vector3i seedVx = mmToVx(Vector3f(seed[0], seed[1], seed[2]), offset, spacing);
 		segmentation->addSeedPoint(seedVx);
 	}
@@ -128,63 +122,4 @@ int main(int argc, char** argv) {
 	vtkExporter->setFilename(centerlinePath);
 	vtkExporter->setInputConnection(centerline->getOutputPort());
 	vtkExporter->update();
-
-    // Export data if user has specified to do so
-    if(parser.gotValue("export_segmentation")) {
-        auto exporter = MetaImageExporter::New();
-        exporter->setFilename(parser.get("export_segmentation"));
-        exporter->setInputConnection(segmentation->getOutputPort());
-        exporter->update();
-    }
-    if(parser.gotValue("export_centerline")) {
-        auto exporter = VTKMeshFileExporter::New();
-        exporter->setFilename(parser.get("export_centerline"));
-        exporter->setInputConnection(centerline->getOutputPort());
-        exporter->update();
-		
-    }
-// 	if(parser.gotValue("export_segmentation") || parser.gotValue("export_centerline"))
-// 		return 0; // Dont render if exporting..
-
-// 	// Extract surface from segmentation
-// 	auto extraction = SurfaceExtraction::New();
-// 	extraction->setInputConnection(segmentation->getOutputPort());
-
-// 	// Set up renderers and window
-// 	auto renderer = TriangleRenderer::New();
-// 	renderer->addInputConnection(extraction->getOutputPort());
-
-// 	auto lineRenderer = LineRenderer::New();
-// 	lineRenderer->addInputConnection(centerline->getOutputPort());
-// 	lineRenderer->setDefaultDrawOnTop(true);
-// 	lineRenderer->setDefaultColor(Color::Blue());
-
-// 	auto window = SimpleWindow::New();
-// 	window->addRenderer(renderer);
-// 	window->addRenderer(lineRenderer);
-// #ifdef FAST_CONTINUOUS_INTEGRATION
-// 	// This will automatically close the window after 5 seconds, used for CI testing
-//     window->setTimeout(5*1000);
-// #endif
-// 	window->start();
-
-	if (initialSeeds.size() + additionalSeeds.size() == 0) {
-		Vector3i autoSeed = segmentation->autoSeed;
-		if (autoSeed == Vector3i::Zero()) {
-			// no seed found. catch error and handle here?
-		}
-
-		Vector3f seedVx = vxToMm(autoSeed, offset, spacing);
-
-		segData["tracheal_points_mm"]["initial"] = { {seedVx[0], seedVx[1], seedVx[2]} };
-		segData["tracheal_points_mm"]["additional"] = std::vector<float>{};
-	} else {
-		segData["tracheal_points_mm"]["initial"] = std::vector<float>{};
-		segData["tracheal_points_mm"]["additional"] = std::vector<float>{};
-	}
-
-	std::string outPath = (std::string)segData["results_path"] + "/seg_" + std::to_string((int)segData["seg_id"]) + ".tracheal_points.json";
-	std::ofstream algOut(outPath);
-	algOut << std::setw(4) << segData << std::endl;
-	algOut.close();
 }
