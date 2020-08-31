@@ -166,7 +166,7 @@ if(FAST_BUILD_TESTS)
     target_link_libraries(testFAST FAST)
 endif()
 
-add_executable(airwaySegmentation ./source/FAST/Examples/Segmentation/airwaySegmentation.cpp)
+add_executable(airwaySegmentation ./source/FAST/airwaySegmentation.cpp)
 target_link_libraries(airwaySegmentation FAST)
 
 set(CONF_FAST_LIBRARIES FAST ${LIBRARIES})
