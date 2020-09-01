@@ -77,15 +77,14 @@ int main(int argc, char** argv) {
 	segmentation->setSmoothing(parser.get<float>("smoothing"));
 	segmentation->setVoxSpacing(spacing);
 
-	auto initialSeeds = segData["tracheal_points_mm"]["initial"];
-	auto additionalSeeds = segData["tracheal_points_mm"]["additional"];
+	auto initialSeeds = segData["tracheal_points_vx"]["initial"];
 	for (auto seed : initialSeeds) {
-		Vector3i seedVx = mmToVx(Vector3f(seed[0], seed[1], seed[2]), offset, spacing);
-		segmentation->addSeedPoint(seedVx);
+		segmentation->addSeedPoint(Vector3i(seed[0], seed[1], seed[2]));
 	}
+
+	auto additionalSeeds = segData["tracheal_points_vx"]["additional"];
 	for (auto seed : additionalSeeds) {
-		Vector3i seedVx = mmToVx(Vector3f(seed[0], seed[1], seed[2]), offset, spacing);
-		segmentation->addSeedPoint(seedVx);
+		segmentation->addSeedPoint(Vector3i(seed[0], seed[1], seed[2]));
 	}
 
 	// Extract centerline from segmentation
