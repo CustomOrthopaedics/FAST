@@ -77,13 +77,13 @@ int main(int argc, char** argv) {
 	segmentation->setSmoothing(parser.get<float>("smoothing"));
 	segmentation->setVoxSpacing(spacing);
 
-	auto initialSeeds = segData["tracheal_points_vx"]["initial"];
-	for (auto seed : initialSeeds) {
+	auto newSeeds = segData["tracheal_points_vx"]["new"];
+	for (auto seed : newSeeds) {
 		segmentation->addSeedPoint(Vector3i(seed[0], seed[1], seed[2]));
 	}
 
-	auto additionalSeeds = segData["tracheal_points_vx"]["additional"];
-	for (auto seed : additionalSeeds) {
+	auto existingSeeds = segData["tracheal_points_vx"]["existing"];
+	for (auto seed : existingSeeds) {
 		segmentation->addSeedPoint(Vector3i(seed[0], seed[1], seed[2]));
 	}
 
