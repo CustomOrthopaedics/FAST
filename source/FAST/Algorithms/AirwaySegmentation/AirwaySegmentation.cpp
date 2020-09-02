@@ -297,10 +297,8 @@ void AirwaySegmentation::regionGrowing(Image::pointer volume, Segmentation::poin
 	short* volData = (short*)volAccess->get();
 
 	ImageAccess::pointer segAccess = segmentation->getImageAccess(ACCESS_READ_WRITE);
-	uchar* segData = (uchar*)segAccess->get();
-	memset(segData, 0, width*height*depth);
-
-	uchar* seedMask = (uchar*) malloc(width*height*depth);
+	uchar* segMask = (uchar*)segAccess->get();
+	memset(segMask, 0, width*height*depth);
 
 	// Create neighbor list
 	std::vector<Vector3i> neighborList;
@@ -313,27 +311,11 @@ void AirwaySegmentation::regionGrowing(Image::pointer volume, Segmentation::poin
 	}}}
 
 	for (Vector3i seed : seeds) {
-		// reset mask
-		memset(seedMask, 0, width*height*depth);
-
 		Reporter::info() << "Segmenting Seed: " << seed.transpose() << Reporter::end();
 
-		// perform region growing, store results in seedMask
-		grow(seed, seedMask, neighborList, volData, maxAirwayDensity);
-
-		// add mask to final seg
-		for (int x = 0; x < width; ++x) {
-			for (int y = 0; y < height; ++y) {
-				for (int z = 0; z < depth; ++z) {
-					int index = getIndex(x, y, z);
-					if (seedMask[index] == 1) {
-						segData[index] = 1;
-					}
-				}
-			}
-		}
+		// perform region growing, store results in segMask
+		grow(seed, segMask, neighborList, volData, maxAirwayDensity);
 	}
-	free(seedMask);
 }
 
 Image::pointer AirwaySegmentation::convertToHU(Image::pointer image) {
