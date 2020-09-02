@@ -15,10 +15,10 @@
 
 using namespace boost::accumulators;
 
-float deltaW = 200.0;
+float deltaW = 175.0;
 float dr = 0.5;
 float rMax = 20.0;
-float maxRadiusIncrease = 2.0;
+float maxRadiusIncrease = 2.2;
 float maxAirwayDensity = -550.0;
 int maxVoxelVal = 1000;
 
