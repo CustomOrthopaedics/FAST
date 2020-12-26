@@ -103,6 +103,29 @@ int main(int argc, char** argv) {
 	vtkExporter->setFilename(centerlinePath);
 	vtkExporter->setInputConnection(centerline->getOutputPort());
 	vtkExporter->update();
+
+	nlohmann::json voxelJSON;
+
+	for (Voxel vox : segmentation->maskVoxels) {
+		char key[12];
+		sprintf(key, "%03d,%03d,%03d", vox.point.x(), vox.point.y(), vox.point.z());
+		voxelJSON[key]["centricity"] = vox.centricity;
+		voxelJSON[key]["minRadius"] = vox.minRadius;
+		voxelJSON[key]["meanRadii"] = vox.meanRadii;
+
+		for (int i = 0; i < vox.rays.size(); ++i) {
+			voxelJSON[key]["rays"][i]["direction"] = std::vector<float>{vox.rays[i].direction.x(), vox.rays[i].direction.x(), vox.rays[i].direction.x()};
+			voxelJSON[key]["rays"][i]["length"] = vox.rays[i].length;
+			voxelJSON[key]["rays"][i]["startHU"] = vox.rays[i].startHU;
+			voxelJSON[key]["rays"][i]["endHU"] = vox.rays[i].endHU;
+		}
+	}
+
+	std::ofstream voxFile((std::string)segData["results_path"] + "/voxData.json");
+
+	voxFile << std::setw(4) << voxelJSON << std::endl;
+
+	voxFile.close();
 }
 
 Vector3i mmToVx(Vector3f seed, Vector3f origin, Vector3f spacing) {
