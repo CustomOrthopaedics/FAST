@@ -108,27 +108,34 @@ int AirwaySegmentation::interp3D(short *vol, Vector3f point) {
 	return interpolate3D(verts, localPoint);
 }
 
-float AirwaySegmentation::findDistanceToWall(short *vol, Vector3f dir, Vector3i startPoint) {
+VoxelRay AirwaySegmentation::findDistanceToWall(short *vol, Vector3f dir, Vector3i startPoint) {
 	int startVal = vol[getIndex(startPoint)];
 	int endVal = 0;
 	float distance = 0.0;
+	Vector3f startPointf = Vector3f((float)startPoint.x(), (float)startPoint.y(), (float)startPoint.z());
+	Vector3f endPoint;
 
 	do {
 		distance += dr;
-		Vector3f endPoint = (dir * distance) + Vector3f((float)startPoint.x(), (float)startPoint.y(), (float)startPoint.z());
+		endPoint = (Vector3f(dir) * distance) + startPointf;
 		endVal = interp3D(vol, endPoint);
 	} while(endVal - startVal < deltaW && distance < rMax);
 
-	return distance * mmPerVx;
+	float dist = calcDistance(Vector3f(0.0, 0.0, 0.0), (endPoint - startPointf).cwiseProduct(voxSpacing));
+
+	return VoxelRay(dir, dist, startVal, endVal);
 }
 
 Voxel AirwaySegmentation::getVoxelData(short *vol, Vector3i point) {
 	std::vector<float> diameters;
+	std::vector<VoxelRay> rays;
 	for (int i = 0; i < 21; i++) {
-		float dist1 = findDistanceToWall(vol, icohalfVx[i], point);
-		float dist2 = findDistanceToWall(vol, -1.0 * icohalfVx[i], point);
+		VoxelRay ray1 = findDistanceToWall(vol, icohalfVx[i], point);
+		VoxelRay ray2 = findDistanceToWall(vol, -1.0 * icohalfVx[i], point);
 
-		diameters.push_back(dist1 + dist2);
+		diameters.push_back(ray1.length + ray2.length);
+		rays.push_back(ray1);
+		rays.push_back(ray2);
 	}
 
 	std::sort(diameters.begin(), diameters.end());
@@ -145,7 +152,10 @@ Voxel AirwaySegmentation::getVoxelData(short *vol, Vector3i point) {
 	float centricity = 1 - (radiStdDev / radiiMean);
 	float smallestRadius = diameters[0] / 2.0;
 
-	return Voxel(point, centricity, smallestRadius, radiiMean);
+	Voxel vox = Voxel(point, centricity, smallestRadius, radiiMean);
+	vox.rays = rays;
+
+	return vox;
 }
 
 AirwaySegmentation::AirwaySegmentation() {
@@ -285,6 +295,7 @@ int AirwaySegmentation::grow(Vector3i seed, uchar* mask, std::vector<Vector3i> n
 			}
 
 			queue.push(vox);
+			maskVoxels.push_back(vox);
         }
     }
 
@@ -469,8 +480,6 @@ void AirwaySegmentation::setVoxSpacing(Vector3f spacing) {
 		icohalfVx[i] = icohalfMm[i];
 		icohalfVx[i] = icohalfVx[i].cwiseQuotient(spacing);
 	}
-
-	mmPerVx = calcDistance(Vector3f(0.0, 0.0, 0.0), spacing);
 }
 
 }

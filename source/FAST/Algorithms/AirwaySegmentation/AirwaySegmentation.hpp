@@ -4,18 +4,36 @@
 #include "FAST/Algorithms/SegmentationAlgorithm.hpp"
 
 namespace fast {
+struct VoxelRay {
+	Vector3f direction;
+	float length;
+	int startHU;
+	int endHU;
+
+	VoxelRay(Vector3f dir, float len, int sHU, int eHU) {
+		direction = dir;
+		length = length;
+		startHU = sHU;
+		endHU = eHU;
+	}
+};
 
 struct Voxel {
 	Vector3i point;
 	float centricity;
 	float minRadius;
 	float meanRadii;
+	std::vector<VoxelRay> rays;
 
 	Voxel(Vector3i p, float cent, float minRad, float meanRad) {
 		point = p;
 		centricity = cent;
 		minRadius = minRad;
 		meanRadii = meanRad;
+	}
+
+	void addRay(VoxelRay ray) {
+		rays.push_back(ray);
 	}
 
 	// https://stackoverflow.com/a/5712235
@@ -41,6 +59,7 @@ class FAST_EXPORT  AirwaySegmentation : public SegmentationAlgorithm {
 		 */
 		void setSmoothing(float sigma);
 		Vector3i autoSeed;
+		std::vector<Voxel> maskVoxels;
 	private:
 		AirwaySegmentation();
 		void execute();
@@ -50,7 +69,7 @@ class FAST_EXPORT  AirwaySegmentation : public SegmentationAlgorithm {
 		int interp3D(short *vol, Vector3f point);
 		int getIndex(Vector3i);
 		int getIndex(int x, int y, int z);
-		float findDistanceToWall(short *vol, Vector3f dir, Vector3i startPoint);
+		VoxelRay findDistanceToWall(short *vol, Vector3f dir, Vector3i startPoint);
 		Voxel getVoxelData(short *vol, Vector3i point);
 		int grow(Vector3i seed, uchar* mask, std::vector<Vector3i> neighbors, short* data, float threshold);
 		void regionGrowing(Image::pointer volume, Segmentation::pointer segmentation, const std::vector<Vector3i> seeds);
