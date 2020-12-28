@@ -22,6 +22,16 @@ float maxRadiusIncrease = 2.2;
 float maxAirwayDensity = -550.0;
 int maxVoxelVal = 1000;
 
+struct diamCompare {
+	constexpr bool operator()(
+			std::pair<float, std::vector<float> > const &a,
+			std::pair<float, std::vector<float> > const &b)
+			const noexcept
+	{
+		return a.first > b.first;
+	}
+};
+
 namespace fast {
 
 Vector3f icohalfMm[21] = {
@@ -129,30 +139,33 @@ VoxelRay AirwaySegmentation::findDistanceToWall(short *vol, Vector3f dir, Vector
 }
 
 Voxel AirwaySegmentation::getVoxelData(short *vol, Vector3i point) {
-	std::vector<float> diameters;
 	std::vector<VoxelRay> rays;
+	// min priority queue based on diameter
+	std::priority_queue<std::pair<float, std::vector<float> >, std::vector<std::pair<float, std::vector<float> > >, diamCompare > diamQueue;
 	for (int i = 0; i < 21; i++) {
 		VoxelRay ray1 = findDistanceToWall(vol, icohalfVx[i], point);
 		VoxelRay ray2 = findDistanceToWall(vol, -1.0 * icohalfVx[i], point);
 
-		diameters.push_back(ray1.length + ray2.length);
+		diamQueue.push(std::pair<float, std::vector<float> > (ray1.length + ray2.length, std::vector<float>{ray1.length, ray2.length}));
 		rays.push_back(ray1);
 		rays.push_back(ray2);
 	}
 
-	std::sort(diameters.begin(), diameters.end());
+	float smallestRadius = diamQueue.top().first / 2.0;
 
 	// find lower half of diameters
 	accumulator_set<float, stats<tag::variance> > acc;
 	for (int i = 0; i < 10; i++) {
-		acc(diameters[i]);
+		std::vector<float> radii = diamQueue.top().second;
+		diamQueue.pop();
+		acc(radii[0]);
+		acc(radii[1]);
 	}
 
-	float radiiMean = mean(acc) / 2.0;
-	float radiStdDev = sqrt(variance(acc)) / 2.0;
+	float radiiMean = mean(acc);
+	float radiStdDev = sqrt(variance(acc));
 
 	float centricity = 1 - (radiStdDev / radiiMean);
-	float smallestRadius = diameters[0] / 2.0;
 
 	Voxel vox = Voxel(point, centricity, smallestRadius, radiiMean);
 	vox.rays = rays;
@@ -288,6 +301,7 @@ int AirwaySegmentation::grow(Vector3i seed, uchar* mask, std::vector<Vector3i> n
 
 			// radius is too large, voxel may be leaking
 			if (vox.meanRadii > pathMinRadius * maxRadiusIncrease) {
+				maskVoxels.push_back(vox);
 				continue;
 			}
 
@@ -296,8 +310,9 @@ int AirwaySegmentation::grow(Vector3i seed, uchar* mask, std::vector<Vector3i> n
 				vox.minRadius = pathMinRadius;
 			}
 
-			queue.push(vox);
 			maskVoxels.push_back(vox);
+
+			queue.push(vox);
         }
     }
 
