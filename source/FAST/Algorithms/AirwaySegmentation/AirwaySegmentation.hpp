@@ -12,7 +12,7 @@ struct VoxelRay {
 
 	VoxelRay(Vector3f dir, float len, int sHU, int eHU) {
 		direction = dir;
-		length = length;
+		length = len;
 		startHU = sHU;
 		endHU = eHU;
 	}

@@ -15,6 +15,7 @@ using namespace fast;
 
 Vector3i mmToVx(Vector3f seed, Vector3f origin, Vector3f spacing);
 Vector3f vxToMm(Vector3i seed, Vector3f origin, Vector3f spacing);
+double ToTwoDecimalPlaces(double d);
 
 int main(int argc, char** argv) {
     Reporter::setGlobalReportMethod(Reporter::COUT); // TODO remove
@@ -109,21 +110,21 @@ int main(int argc, char** argv) {
 	for (Voxel vox : segmentation->maskVoxels) {
 		char key[12];
 		sprintf(key, "%03d,%03d,%03d", vox.point.x(), vox.point.y(), vox.point.z());
-		voxelJSON[key]["centricity"] = vox.centricity;
-		voxelJSON[key]["minRadius"] = vox.minRadius;
-		voxelJSON[key]["meanRadii"] = vox.meanRadii;
+		voxelJSON[key]["cent"] = ToTwoDecimalPlaces(vox.centricity);
+		voxelJSON[key]["minR"] = ToTwoDecimalPlaces(vox.minRadius);
+		voxelJSON[key]["meanR"] = ToTwoDecimalPlaces(vox.meanRadii);
 
 		for (int i = 0; i < vox.rays.size(); ++i) {
-			voxelJSON[key]["rays"][i]["direction"] = std::vector<float>{vox.rays[i].direction.x(), vox.rays[i].direction.x(), vox.rays[i].direction.x()};
-			voxelJSON[key]["rays"][i]["length"] = vox.rays[i].length;
-			voxelJSON[key]["rays"][i]["startHU"] = vox.rays[i].startHU;
-			voxelJSON[key]["rays"][i]["endHU"] = vox.rays[i].endHU;
+			voxelJSON[key]["rays"][i]["dir"] = std::vector<double>{ToTwoDecimalPlaces(vox.rays[i].direction.x()), ToTwoDecimalPlaces(vox.rays[i].direction.y()), ToTwoDecimalPlaces(vox.rays[i].direction.z())};
+			voxelJSON[key]["rays"][i]["len"] = ToTwoDecimalPlaces(vox.rays[i].length);
+			voxelJSON[key]["rays"][i]["sHU"] = vox.rays[i].startHU;
+			voxelJSON[key]["rays"][i]["eHU"] = vox.rays[i].endHU;
 		}
 	}
 
 	std::ofstream voxFile((std::string)segData["results_path"] + "/voxData.json");
 
-	voxFile << std::setw(4) << voxelJSON << std::endl;
+	voxFile << std::setw(2) << voxelJSON << std::endl;
 
 	voxFile.close();
 }
@@ -142,4 +143,22 @@ Vector3f vxToMm(Vector3i seed, Vector3f origin, Vector3f spacing) {
 	float z = (float(seed[2]) * spacing[2]) + origin[2];
 
 	return Vector3f(x, y, z);
+}
+
+// https://github.com/nlohmann/json/issues/1191#issuecomment-412688086
+double ToTwoDecimalPlaces(double d) {
+
+  int i;
+
+  if (d >= 0)
+
+    i = static_cast<int>(d * 1000 + 0.5);
+
+  else
+
+    i = static_cast<int>(d * 1000 - 0.5);
+
+
+  return (i / 1000.0);
+
 }
