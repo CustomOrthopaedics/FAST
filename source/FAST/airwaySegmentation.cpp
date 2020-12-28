@@ -113,18 +113,18 @@ int main(int argc, char** argv) {
 		voxelJSON[key]["cent"] = ToTwoDecimalPlaces(vox.centricity);
 		voxelJSON[key]["minR"] = ToTwoDecimalPlaces(vox.minRadius);
 		voxelJSON[key]["meanR"] = ToTwoDecimalPlaces(vox.meanRadii);
+		voxelJSON[key]["sHU"] = vox.rays[0].startHU;
 
 		for (int i = 0; i < vox.rays.size(); ++i) {
 			voxelJSON[key]["rays"][i]["dir"] = std::vector<double>{ToTwoDecimalPlaces(vox.rays[i].direction.x()), ToTwoDecimalPlaces(vox.rays[i].direction.y()), ToTwoDecimalPlaces(vox.rays[i].direction.z())};
 			voxelJSON[key]["rays"][i]["len"] = ToTwoDecimalPlaces(vox.rays[i].length);
-			voxelJSON[key]["rays"][i]["sHU"] = vox.rays[i].startHU;
 			voxelJSON[key]["rays"][i]["eHU"] = vox.rays[i].endHU;
 		}
 	}
 
 	std::ofstream voxFile((std::string)segData["results_path"] + "/voxData.json");
 
-	voxFile << std::setw(2) << voxelJSON << std::endl;
+	voxFile << voxelJSON << std::endl;
 
 	voxFile.close();
 }

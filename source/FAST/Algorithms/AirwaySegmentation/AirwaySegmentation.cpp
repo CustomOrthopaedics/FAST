@@ -123,7 +123,9 @@ VoxelRay AirwaySegmentation::findDistanceToWall(short *vol, Vector3f dir, Vector
 
 	float dist = calcDistance(Vector3f(0.0, 0.0, 0.0), (endPoint - startPointf).cwiseProduct(voxSpacing));
 
-	return VoxelRay(dir, dist, startVal, endVal);
+	Vector3f mmDir = Vector3f(dir).cwiseProduct(voxSpacing);
+
+	return VoxelRay(mmDir, dist, startVal, endVal);
 }
 
 Voxel AirwaySegmentation::getVoxelData(short *vol, Vector3i point) {
