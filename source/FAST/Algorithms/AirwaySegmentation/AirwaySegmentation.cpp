@@ -251,35 +251,41 @@ Vector3i AirwaySegmentation::findSeedVoxel(Image::pointer volume) {
     return currentSeed;
 }
 
-int AirwaySegmentation::grow(Vector3i seed, uchar* mask, std::vector<Vector3i> neighbors, short* data, float threshold) {
+int AirwaySegmentation::grow(Vector3i seed, uchar* mask, std::vector<Vector3i> neighbors, short* data, float threshold, int& maskIdx) {
 	// max priority queue based on centricity of voxel
-    std::priority_queue<Voxel> queue;
+  std::priority_queue<Voxel> queue;
 
 	float pathMinRadius = 9999.0;
-	queue.push(Voxel(seed, 1.0, pathMinRadius, 1.0));
+	Voxel seedVox = getVoxelData(data, seed);
+	seedVox.minRadius = pathMinRadius;
+	seedVox.maskIdx = maskIdx++;
+	queue.push(seedVox);
 
 	int maskSize = 0;
 	int volSize = height * width * depth;
 
 	// stop at half vol size in case of major leaks
-    while (!queue.empty() && maskSize < volSize / 2) {
-        Voxel currVox = queue.top();
-        queue.pop();
+	while (!queue.empty() && maskSize < volSize / 2) {
+		Voxel currVox = queue.top();
+		queue.pop();
+
+		currVox.maskIdx = maskIdx++;
+		maskVoxels.push_back(currVox);
 
 		pathMinRadius = currVox.minRadius;
 
 		Vector3i x = currVox.point;
-        mask[getIndex(x)] = 1;
+		mask[getIndex(x)] = 1;
 
-        // Add 26 neighbors
-        for (int i = 0; i < 25; ++i) {
-        	Vector3i neighbor = neighbors[i];
-            Vector3i y(x.x()+neighbor.x(), x.y()+neighbor.y(), x.z()+neighbor.z());
+		// Add 26 neighbors
+		for (int i = 0; i < 25; ++i) {
+			Vector3i neighbor = neighbors[i];
+			Vector3i y(x.x()+neighbor.x(), x.y()+neighbor.y(), x.z()+neighbor.z());
 
 			// outside of volume
-			if(y.x() < 0 || y.y() < 0 || y.z() < 0 || y.x() >= width || y.y() >= height || y.z() >= depth) {
-                continue;
-            }
+			if (y.x() < 0 || y.y() < 0 || y.z() < 0 || y.x() >= width || y.y() >= height || y.z() >= depth) {
+				continue;
+			}
 
 			int volIdx = getIndex(y);
 
@@ -301,6 +307,7 @@ int AirwaySegmentation::grow(Vector3i seed, uchar* mask, std::vector<Vector3i> n
 
 			// radius is too large, voxel may be leaking
 			if (vox.meanRadii > pathMinRadius * maxRadiusIncrease) {
+				vox.maskIdx = maskIdx++;
 				maskVoxels.push_back(vox);
 				continue;
 			}
@@ -310,13 +317,11 @@ int AirwaySegmentation::grow(Vector3i seed, uchar* mask, std::vector<Vector3i> n
 				vox.minRadius = pathMinRadius;
 			}
 
-			maskVoxels.push_back(vox);
-
 			queue.push(vox);
-        }
-    }
+		}
+	}
 
-    return maskSize;
+	return maskSize;
 }
 
 void AirwaySegmentation::regionGrowing(Image::pointer volume, Segmentation::pointer segmentation, const std::vector<Vector3i> seeds) {
@@ -338,11 +343,13 @@ void AirwaySegmentation::regionGrowing(Image::pointer volume, Segmentation::poin
 		neighborList.push_back(Vector3i(a,b,c));
 	}}}
 
+	int maskIdx = 0;
+
 	for (Vector3i seed : seeds) {
 		Reporter::info() << "Segmenting Seed: " << seed.transpose() << Reporter::end();
 
 		// perform region growing, store results in segMask
-		grow(seed, segMask, neighborList, volData, maxAirwayDensity);
+		grow(seed, segMask, neighborList, volData, maxAirwayDensity, maskIdx);
 	}
 }
 

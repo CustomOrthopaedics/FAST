@@ -23,7 +23,10 @@ struct Voxel {
 	float centricity;
 	float minRadius;
 	float meanRadii;
+
+	// debugging code
 	std::vector<VoxelRay> rays;
+	int maskIdx;
 
 	Voxel(Vector3i p, float cent, float minRad, float meanRad) {
 		point = p;
@@ -71,7 +74,7 @@ class FAST_EXPORT  AirwaySegmentation : public SegmentationAlgorithm {
 		int getIndex(int x, int y, int z);
 		VoxelRay findDistanceToWall(short *vol, Vector3f dir, Vector3i startPoint);
 		Voxel getVoxelData(short *vol, Vector3i point);
-		int grow(Vector3i seed, uchar* mask, std::vector<Vector3i> neighbors, short* data, float threshold);
+		int grow(Vector3i seed, uchar* mask, std::vector<Vector3i> neighbors, short* data, float threshold, int& maskIdx);
 		void regionGrowing(Image::pointer volume, Segmentation::pointer segmentation, const std::vector<Vector3i> seeds);
 
 		std::vector<Vector3i> mSeedPoints;

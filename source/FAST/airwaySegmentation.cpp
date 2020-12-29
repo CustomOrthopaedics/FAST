@@ -15,7 +15,7 @@ using namespace fast;
 
 Vector3i mmToVx(Vector3f seed, Vector3f origin, Vector3f spacing);
 Vector3f vxToMm(Vector3i seed, Vector3f origin, Vector3f spacing);
-double ToTwoDecimalPlaces(double d);
+double toThreeDecimalPlaces(double d);
 
 int main(int argc, char** argv) {
     Reporter::setGlobalReportMethod(Reporter::COUT); // TODO remove
@@ -110,14 +110,15 @@ int main(int argc, char** argv) {
 	for (Voxel vox : segmentation->maskVoxels) {
 		char key[12];
 		sprintf(key, "%03d,%03d,%03d", vox.point.x(), vox.point.y(), vox.point.z());
-		voxelJSON[key]["cent"] = ToTwoDecimalPlaces(vox.centricity);
-		voxelJSON[key]["minR"] = ToTwoDecimalPlaces(vox.minRadius);
-		voxelJSON[key]["meanR"] = ToTwoDecimalPlaces(vox.meanRadii);
+		voxelJSON[key]["cent"] = toThreeDecimalPlaces(vox.centricity);
+		voxelJSON[key]["minR"] = toThreeDecimalPlaces(vox.minRadius);
+		voxelJSON[key]["meanR"] = toThreeDecimalPlaces(vox.meanRadii);
 		voxelJSON[key]["sHU"] = vox.rays[0].startHU;
+		voxelJSON[key]["mIdx"] = vox.maskIdx;
 
 		for (int i = 0; i < vox.rays.size(); ++i) {
-			voxelJSON[key]["rays"][i]["dir"] = std::vector<double>{ToTwoDecimalPlaces(vox.rays[i].direction.x()), ToTwoDecimalPlaces(vox.rays[i].direction.y()), ToTwoDecimalPlaces(vox.rays[i].direction.z())};
-			voxelJSON[key]["rays"][i]["len"] = ToTwoDecimalPlaces(vox.rays[i].length);
+			voxelJSON[key]["rays"][i]["dir"] = std::vector<double>{toThreeDecimalPlaces(vox.rays[i].direction.x()), toThreeDecimalPlaces(vox.rays[i].direction.y()), toThreeDecimalPlaces(vox.rays[i].direction.z())};
+			voxelJSON[key]["rays"][i]["len"] = toThreeDecimalPlaces(vox.rays[i].length);
 			voxelJSON[key]["rays"][i]["eHU"] = vox.rays[i].endHU;
 		}
 	}
@@ -146,7 +147,7 @@ Vector3f vxToMm(Vector3i seed, Vector3f origin, Vector3f spacing) {
 }
 
 // https://github.com/nlohmann/json/issues/1191#issuecomment-412688086
-double ToTwoDecimalPlaces(double d) {
+double toThreeDecimalPlaces(double d) {
 
   int i;
 
