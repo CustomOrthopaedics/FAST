@@ -258,29 +258,42 @@ int AirwaySegmentation::grow(Vector3i seed, uchar* mask, std::vector<Vector3i> n
 	float pathMinRadius = 9999.0;
 	Voxel seedVox = getVoxelData(data, seed);
 	seedVox.minRadius = pathMinRadius;
-	seedVox.maskIdx = maskIdx++;
+	seedVox.maskIdx = 0;
 	queue.push(seedVox);
 
+	mask[getIndex(seed)] = 1;
+
+	int pathVoxelIdx = 0;
 	int maskSize = 0;
 	int volSize = height * width * depth;
 
+	Voxel prevVox = seedVox;
+
 	// stop at half vol size in case of major leaks
 	while (!queue.empty() && maskSize < volSize / 2) {
-		Voxel currVox = queue.top();
+		Voxel currVox(queue.top());
 		queue.pop();
-
-		currVox.maskIdx = maskIdx++;
-		maskVoxels.push_back(currVox);
 
 		pathMinRadius = currVox.minRadius;
 
-		Vector3i x = currVox.point;
-		mask[getIndex(x)] = 1;
+		// assume travertseing down the 
+		bool isConnected = currVox.minRadius - prevVox.minRadius < 1.0;
+		if (!isConnected) {
+			pathVoxelIdx = 0;
+		}
+
+		currVox.pathVoxelIdx = pathVoxelIdx++;
+		currVox.maskIdx = maskIdx++;
+		maskVoxels.push_back(currVox);
+
+		// this voxel may cause leaking, don't spawn neighbors
+		if (currVox.centricity < 0.5 && currVox.pathVoxelIdx >= 20 /* && currVox.meanRadii < 1.0 */) {
+			continue;
+		}
 
 		// Add 26 neighbors
 		for (int i = 0; i < 25; ++i) {
-			Vector3i neighbor = neighbors[i];
-			Vector3i y(x.x()+neighbor.x(), x.y()+neighbor.y(), x.z()+neighbor.z());
+			Vector3i y(currVox.point.x()+neighbors[i].x(), currVox.point.y()+neighbors[i].y(), currVox.point.z()+neighbors[i].z());
 
 			// outside of volume
 			if (y.x() < 0 || y.y() < 0 || y.z() < 0 || y.x() >= width || y.y() >= height || y.z() >= depth) {
@@ -303,11 +316,20 @@ int AirwaySegmentation::grow(Vector3i seed, uchar* mask, std::vector<Vector3i> n
 			mask[volIdx] = 1;
 			maskSize++;
 
-			Voxel vox = getVoxelData(data, y);
+			Voxel vox(getVoxelData(data, y));
 
 			// radius is too large, voxel may be leaking
 			if (vox.meanRadii > pathMinRadius * maxRadiusIncrease) {
 				vox.maskIdx = maskIdx++;
+				vox.pathVoxelIdx = -1;
+				maskVoxels.push_back(vox);
+				continue;
+			}
+
+			// possible end of branch detected, voxel may be leaking
+			if (currVox.centricity >= 0.25 && currVox.minRadius < 1.0) {
+				vox.maskIdx = maskIdx++;
+				vox.pathVoxelIdx = -1;
 				maskVoxels.push_back(vox);
 				continue;
 			}
@@ -319,6 +341,8 @@ int AirwaySegmentation::grow(Vector3i seed, uchar* mask, std::vector<Vector3i> n
 
 			queue.push(vox);
 		}
+
+		prevVox = currVox;
 	}
 
 	return maskSize;
@@ -481,7 +505,7 @@ void AirwaySegmentation::execute() {
 	regionGrowing(image, segmentation, mSeedPoints);
 
 	// Do morphological closing to remove holes in segmentation
-	morphologicalClosing(segmentation);
+	// morphologicalClosing(segmentation);
 }
 
 void AirwaySegmentation::addSeedPoint(int x, int y, int z) {

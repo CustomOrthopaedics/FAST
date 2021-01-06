@@ -169,6 +169,9 @@ endif()
 add_executable(airwaySegmentation ./source/FAST/airwaySegmentation.cpp)
 target_link_libraries(airwaySegmentation FAST)
 
+add_executable(airwayCenterline ./source/FAST/airwayCenterline.cpp)
+target_link_libraries(airwayCenterline FAST)
+
 set(CONF_FAST_LIBRARIES FAST ${LIBRARIES})
 
 # Create config and use file

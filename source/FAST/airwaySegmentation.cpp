@@ -88,39 +88,31 @@ int main(int argc, char** argv) {
 		segmentation->addSeedPoint(Vector3i(seed[0], seed[1], seed[2]));
 	}
 
-	// Extract centerline from segmentation
-	auto centerline = CenterlineExtraction::New();
-	centerline->setInputConnection(segmentation->getOutputPort());
-	centerline->setOffset(offset);
-
 	auto exporter = MetaImageExporter::New();
 	std::string airwayPath = (std::string)segData["results_path"] + "/seg_" + std::to_string((int)segData["seg_id"]) + ".mhd";
 	exporter->setFilename(airwayPath);
 	exporter->setInputConnection(segmentation->getOutputPort());
 	exporter->update();
 
-	auto vtkExporter = VTKMeshFileExporter::New();
-	std::string centerlinePath = (std::string)segData["results_path"] + "/seg_" + std::to_string((int)segData["seg_id"]) + ".centerline.vtk";
-	vtkExporter->setFilename(centerlinePath);
-	vtkExporter->setInputConnection(centerline->getOutputPort());
-	vtkExporter->update();
-
 	nlohmann::json voxelJSON;
 
 	for (Voxel vox : segmentation->maskVoxels) {
 		char key[12];
 		sprintf(key, "%03d,%03d,%03d", vox.point.x(), vox.point.y(), vox.point.z());
+		Vector3f posMM = vxToMm(vox.point, offset, spacing);
+		voxelJSON[key]["posMM"] = std::vector<double>{posMM.x(), posMM.y(), posMM.z()};
 		voxelJSON[key]["cent"] = toThreeDecimalPlaces(vox.centricity);
 		voxelJSON[key]["minR"] = toThreeDecimalPlaces(vox.minRadius);
 		voxelJSON[key]["meanR"] = toThreeDecimalPlaces(vox.meanRadii);
 		voxelJSON[key]["sHU"] = vox.rays[0].startHU;
 		voxelJSON[key]["mIdx"] = vox.maskIdx;
+		voxelJSON[key]["pIdx"] = vox.pathVoxelIdx;
 
-		for (int i = 0; i < vox.rays.size(); ++i) {
-			voxelJSON[key]["rays"][i]["dir"] = std::vector<double>{toThreeDecimalPlaces(vox.rays[i].direction.x()), toThreeDecimalPlaces(vox.rays[i].direction.y()), toThreeDecimalPlaces(vox.rays[i].direction.z())};
-			voxelJSON[key]["rays"][i]["len"] = toThreeDecimalPlaces(vox.rays[i].length);
-			voxelJSON[key]["rays"][i]["eHU"] = vox.rays[i].endHU;
-		}
+		// for (int i = 0; i < vox.rays.size(); ++i) {
+		// 	voxelJSON[key]["rays"][i]["dir"] = std::vector<double>{toThreeDecimalPlaces(vox.rays[i].direction.x()), toThreeDecimalPlaces(vox.rays[i].direction.y()), toThreeDecimalPlaces(vox.rays[i].direction.z())};
+		// 	voxelJSON[key]["rays"][i]["len"] = toThreeDecimalPlaces(vox.rays[i].length);
+		// 	voxelJSON[key]["rays"][i]["eHU"] = vox.rays[i].endHU;
+		// }
 	}
 
 	std::ofstream voxFile((std::string)segData["results_path"] + "/voxData.json");

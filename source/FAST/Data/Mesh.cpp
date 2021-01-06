@@ -332,7 +332,7 @@ MeshAccess::pointer Mesh::getMeshAccess(accessType type) {
         mHostHasData = true;
         mHostDataIsUpToDate = true;
 #else
-        throw Exception("Creating mesh with VBO is disabled as FAST module visualization is disabled.");
+        // throw Exception("Creating mesh with VBO is disabled as FAST module visualization is disabled.");
 #endif
     } else {
         if(!mHostDataIsUpToDate) {

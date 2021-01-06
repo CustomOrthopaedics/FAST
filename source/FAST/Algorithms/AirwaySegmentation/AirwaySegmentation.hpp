@@ -23,6 +23,7 @@ struct Voxel {
 	float centricity;
 	float minRadius;
 	float meanRadii;
+	int pathVoxelIdx;
 
 	// debugging code
 	std::vector<VoxelRay> rays;
