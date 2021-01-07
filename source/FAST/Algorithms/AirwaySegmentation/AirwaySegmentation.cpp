@@ -15,10 +15,10 @@
 
 using namespace boost::accumulators;
 
-float deltaW = 175.0;
+float deltaW = 200.0;
 float dr = 0.5;
 float rMax = 20.0;
-float maxRadiusIncrease = 2.2;
+float maxRadiusIncrease = 2.4;
 float maxAirwayDensity = -550.0;
 int maxVoxelVal = 1000;
 
@@ -276,8 +276,8 @@ int AirwaySegmentation::grow(Vector3i seed, uchar* mask, std::vector<Vector3i> n
 
 		pathMinRadius = currVox.minRadius;
 
-		// assume travertseing down the 
-		bool isConnected = currVox.minRadius - prevVox.minRadius < 1.0;
+		// assume traversing down the airway therefore don't account for sign
+		bool isConnected = currVox.minRadius - prevVox.minRadius < 0.8;
 		if (!isConnected) {
 			pathVoxelIdx = 0;
 		}
@@ -287,7 +287,7 @@ int AirwaySegmentation::grow(Vector3i seed, uchar* mask, std::vector<Vector3i> n
 		maskVoxels.push_back(currVox);
 
 		// this voxel may cause leaking, don't spawn neighbors
-		if (currVox.centricity < 0.5 && currVox.pathVoxelIdx >= 20 /* && currVox.meanRadii < 1.0 */) {
+		if (currVox.centricity < 0.63 && currVox.centricity > 0.25 && currVox.pathVoxelIdx >= 20) {
 			continue;
 		}
 
@@ -327,7 +327,7 @@ int AirwaySegmentation::grow(Vector3i seed, uchar* mask, std::vector<Vector3i> n
 			}
 
 			// possible end of branch detected, voxel may be leaking
-			if (currVox.centricity >= 0.25 && currVox.minRadius < 1.0) {
+			if (currVox.centricity > 0.33 && currVox.minRadius < 1.0) {
 				vox.maskIdx = maskIdx++;
 				vox.pathVoxelIdx = -1;
 				maskVoxels.push_back(vox);
