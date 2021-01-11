@@ -53,7 +53,7 @@ class Segmentation;
 class FAST_EXPORT  AirwaySegmentation : public SegmentationAlgorithm {
 	FAST_OBJECT(AirwaySegmentation)
 	public:
-	    void addSeedPoint(int x, int y, int z);
+	  void addSeedPoint(int x, int y, int z);
 		void addSeedPoint(Vector3i seed);
 		void setVoxSpacing(Vector3f);
 		/**
@@ -64,6 +64,7 @@ class FAST_EXPORT  AirwaySegmentation : public SegmentationAlgorithm {
 		void setSmoothing(float sigma);
 		Vector3i autoSeed;
 		std::vector<Voxel> maskVoxels;
+		void setSensitivity(int sensitivity);
 	private:
 		AirwaySegmentation();
 		void execute();
@@ -81,12 +82,30 @@ class FAST_EXPORT  AirwaySegmentation : public SegmentationAlgorithm {
 		std::vector<Vector3i> mSeedPoints;
 		Vector3f voxSpacing = Vector3f(1, 1, 1);
 		float mSmoothingSigma = 0.5;
-        bool mUseManualSeedPoint = false;
+    bool mUseManualSeedPoint = false;
 		int height;
 		int width;
 		int depth;
 		Vector3f icohalfVx[21];
 		float mmPerVx = 1.0;
+
+		// alg parameters
+		float deltaW = 200.0;
+		float dr = 0.5;
+		float rMax = 20.0;
+		float maxRadiusIncrease = 2.4;
+		float maxAirwayDensity = -550.0;
+		int maxVoxelVal = 1000;
+
+		// path length leakage detection
+		float maxPathRadiusIncrease = 0.8;
+		float pathLengthMaxCentricity = 0.63;
+		float pathLengthMinCentricity = 0.25;
+		int pathLengthMinVoxels = 20;
+
+		// branch end detection
+		float branchEndMinCentricity = 0.33;
+		float branchEndMaxRadius = 1.0;
 };
 
 }

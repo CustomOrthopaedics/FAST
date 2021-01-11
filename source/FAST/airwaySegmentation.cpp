@@ -77,6 +77,7 @@ int main(int argc, char** argv) {
 	segmentation->setInputConnection(importer->getOutputPort());
 	segmentation->setSmoothing(parser.get<float>("smoothing"));
 	segmentation->setVoxSpacing(spacing);
+	segmentation->setSensitivity(5);
 
 	auto newSeeds = segData["tracheal_points_vx"]["new"];
 	for (auto seed : newSeeds) {

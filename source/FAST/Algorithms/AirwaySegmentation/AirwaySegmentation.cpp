@@ -15,13 +15,6 @@
 
 using namespace boost::accumulators;
 
-float deltaW = 200.0;
-float dr = 0.5;
-float rMax = 20.0;
-float maxRadiusIncrease = 2.4;
-float maxAirwayDensity = -550.0;
-int maxVoxelVal = 1000;
-
 struct diamCompare {
 	constexpr bool operator()(
 			std::pair<float, std::vector<float> > const &a,
@@ -277,7 +270,7 @@ int AirwaySegmentation::grow(Vector3i seed, uchar* mask, std::vector<Vector3i> n
 		pathMinRadius = currVox.minRadius;
 
 		// assume traversing down the airway therefore don't account for sign
-		bool isConnected = currVox.minRadius - prevVox.minRadius < 0.8;
+		bool isConnected = currVox.minRadius - prevVox.minRadius < maxPathRadiusIncrease;
 		if (!isConnected) {
 			pathVoxelIdx = 0;
 		}
@@ -287,7 +280,7 @@ int AirwaySegmentation::grow(Vector3i seed, uchar* mask, std::vector<Vector3i> n
 		maskVoxels.push_back(currVox);
 
 		// this voxel may cause leaking, don't spawn neighbors
-		if (currVox.centricity < 0.63 && currVox.centricity > 0.25 && currVox.pathVoxelIdx >= 20) {
+		if (currVox.centricity < pathLengthMaxCentricity && currVox.centricity >= pathLengthMinCentricity && currVox.pathVoxelIdx >= pathLengthMinVoxels) {
 			continue;
 		}
 
@@ -327,7 +320,7 @@ int AirwaySegmentation::grow(Vector3i seed, uchar* mask, std::vector<Vector3i> n
 			}
 
 			// possible end of branch detected, voxel may be leaking
-			if (currVox.centricity > 0.33 && currVox.minRadius < 1.0) {
+			if (currVox.centricity > branchEndMinCentricity && currVox.minRadius < branchEndMaxRadius) {
 				vox.maskIdx = maskIdx++;
 				vox.pathVoxelIdx = -1;
 				maskVoxels.push_back(vox);
@@ -528,6 +521,31 @@ void AirwaySegmentation::setVoxSpacing(Vector3f spacing) {
 		icohalfVx[i] = icohalfMm[i];
 		icohalfVx[i] = icohalfVx[i].cwiseQuotient(spacing);
 	}
+}
+
+void AirwaySegmentation::setSensitivity(int sensitivity) {
+	float s = static_cast<float>(sensitivity) / 10.0;
+	maxRadiusIncrease = interpolate1D(2.3, 2.5, s);
+
+	// sensitivity 5-10 -> -550, -450 max density
+	// sensitivity 0-5 -> -550 max density
+	maxAirwayDensity = std::max((float)-550.0, interpolate1D(-650.0, -450.0, s));
+
+	maxPathRadiusIncrease = interpolate1D(0.9, 0.7, s);
+	pathLengthMaxCentricity = interpolate1D(0.7, 0.56, s);
+	pathLengthMinCentricity = interpolate1D(0.2, 0.3, s);
+
+	branchEndMinCentricity = interpolate1D(0.26, 0.4, s);
+	branchEndMaxRadius = interpolate1D(1.1, 0.9, s);
+
+	Reporter::info() << "Alg sensitivity set to: " << sensitivity << Reporter::end();
+	Reporter::info() << "maxRadiusIncrease: " << maxRadiusIncrease << Reporter::end();
+	Reporter::info() << "maxAirwayDensity: " << maxAirwayDensity << Reporter::end();
+	Reporter::info() << "maxPathRadiusIncrease: " << maxPathRadiusIncrease << Reporter::end();
+	Reporter::info() << "pathLengthMaxCentricity: " << pathLengthMaxCentricity << Reporter::end();
+	Reporter::info() << "pathLengthMinCentricity: " << pathLengthMinCentricity << Reporter::end();
+	Reporter::info() << "branchEndMinCentricity: " << branchEndMinCentricity << Reporter::end();
+	Reporter::info() << "branchEndMaxRadius: " << branchEndMaxRadius << Reporter::end();
 }
 
 }
