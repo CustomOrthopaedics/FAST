@@ -140,8 +140,11 @@ Voxel AirwaySegmentation::getVoxelData(short *vol, Vector3i point) {
 		VoxelRay ray2 = findDistanceToWall(vol, -1.0 * icohalfVx[i], point);
 
 		diamQueue.push(std::pair<float, std::vector<float> > (ray1.length + ray2.length, std::vector<float>{ray1.length, ray2.length}));
-		rays.push_back(ray1);
-		rays.push_back(ray2);
+		
+		if (debug) {
+			rays.push_back(ray1);
+			rays.push_back(ray2);
+		}
 	}
 
 	float smallestRadius = diamQueue.top().first / 2.0;
@@ -262,6 +265,9 @@ int AirwaySegmentation::grow(Vector3i seed, uchar* mask, std::vector<Vector3i> n
 
 	Voxel prevVox = seedVox;
 
+	std::pair<float, float> maxCentRange(0.5, 0.8);
+	std::pair<float, float> minCentRange(0.5, 0.0);
+
 	// stop at half vol size in case of major leaks
 	while (!queue.empty() && maskSize < volSize / 2) {
 		Voxel currVox(queue.top());
@@ -277,11 +283,24 @@ int AirwaySegmentation::grow(Vector3i seed, uchar* mask, std::vector<Vector3i> n
 
 		currVox.pathVoxelIdx = pathVoxelIdx++;
 		currVox.maskIdx = maskIdx++;
-		maskVoxels.push_back(currVox);
+
+		float seedDist = sqrt(pow(currVox.point.x() - seed.x(), 2) + pow(currVox.point.y() - seed.y(), 2));
+		float normalizedDist = std::max(0.0, std::min(1.0, seedDist / 30.0));
+		float maxCentricity = normalizedDist * (maxCentRange.second - maxCentRange.first) + maxCentRange.first;
+		float minCentricity = normalizedDist * (minCentRange.second - minCentRange.first) + minCentRange.first;
 
 		// this voxel may cause leaking, don't spawn neighbors
-		if (currVox.centricity < pathLengthMaxCentricity && currVox.centricity >= pathLengthMinCentricity && currVox.pathVoxelIdx >= pathLengthMinVoxels) {
+		if (currVox.centricity < maxCentricity && currVox.centricity >= minCentricity && currVox.pathVoxelIdx >= pathLengthMinVoxels) {
+			if (debug) {
+				currVox.pathVoxelIdx = -3;
+				maskVoxels.push_back(currVox);
+			}
+
 			continue;
+		}
+
+		if (debug) {
+			maskVoxels.push_back(currVox);
 		}
 
 		// Add 26 neighbors
@@ -305,25 +324,28 @@ int AirwaySegmentation::grow(Vector3i seed, uchar* mask, std::vector<Vector3i> n
 				continue;
 			}
 
+			Voxel vox(getVoxelData(data, y));
+
+			// possible end of branch detected, voxel may be leaking
+			// don't add vox to mask
+			if (currVox.centricity > branchEndMinCentricity && currVox.minRadius < branchEndMaxRadius) {
+				mask[volIdx] = 3;
+				continue;
+			}
+
 			// add vox to mask
 			mask[volIdx] = 1;
 			maskSize++;
 
-			Voxel vox(getVoxelData(data, y));
-
 			// radius is too large, voxel may be leaking
+			// add vox to mask
 			if (vox.meanRadii > pathMinRadius * maxRadiusIncrease) {
-				vox.maskIdx = maskIdx++;
-				vox.pathVoxelIdx = -1;
-				maskVoxels.push_back(vox);
-				continue;
-			}
+				if (debug) {
+					vox.maskIdx = maskIdx++;
+					vox.pathVoxelIdx = -1;
+					maskVoxels.push_back(vox);
+				}
 
-			// possible end of branch detected, voxel may be leaking
-			if (currVox.centricity > branchEndMinCentricity && currVox.minRadius < branchEndMaxRadius) {
-				vox.maskIdx = maskIdx++;
-				vox.pathVoxelIdx = -1;
-				maskVoxels.push_back(vox);
 				continue;
 			}
 
@@ -341,7 +363,7 @@ int AirwaySegmentation::grow(Vector3i seed, uchar* mask, std::vector<Vector3i> n
 	return maskSize;
 }
 
-void AirwaySegmentation::regionGrowing(Image::pointer volume, Segmentation::pointer segmentation, const std::vector<Vector3i> seeds) {
+void AirwaySegmentation::regionGrowing(Image::pointer volume, Segmentation::pointer segmentation, std::vector<Vector3i> seeds) {
 	segmentation->createFromImage(volume);
 	ImageAccess::pointer volAccess = volume->getImageAccess(ACCESS_READ);
 	short* volData = (short*)volAccess->get();
@@ -362,11 +384,30 @@ void AirwaySegmentation::regionGrowing(Image::pointer volume, Segmentation::poin
 
 	int maskIdx = 0;
 
+	// prioritize seed voxels by largest radius
+	std::sort(seeds.begin(), seeds.end(), [&](Vector3i a, Vector3i b) {
+		Voxel aVox = getVoxelData(volData, a);
+		Voxel bVox = getVoxelData(volData, b);
+
+		return aVox.meanRadii > bVox.meanRadii;
+	});
+
 	for (Vector3i seed : seeds) {
 		Reporter::info() << "Segmenting Seed: " << seed.transpose() << Reporter::end();
 
 		// perform region growing, store results in segMask
 		grow(seed, segMask, neighborList, volData, maxAirwayDensity, maskIdx);
+	}
+
+	for (int x = 0; x < width; ++x) {
+		for (int y = 0; y < height; ++y) {
+			for (int z = 0; z < depth; ++z) {
+				int idx = x + y*width + z*width*height;
+				if (segMask[idx] != 1) {
+					segMask[idx] = 0;
+				}
+			}
+		}
 	}
 }
 
@@ -464,8 +505,8 @@ void AirwaySegmentation::execute() {
 	Image::pointer image = getInputData<Image>();
 
 	width = image->getWidth();
-    height = image->getHeight();
-    depth = image->getDepth();
+	height = image->getHeight();
+	depth = image->getDepth();
 
 	// Convert to signed HU if unsigned
 	if(image->getDataType() == TYPE_UINT16) {
@@ -478,17 +519,16 @@ void AirwaySegmentation::execute() {
 	// Smooth image
 	if(mSmoothingSigma > 0) {
 		GaussianSmoothingFilter::pointer filter = GaussianSmoothingFilter::New();
-        filter->setInputData(image);
-        filter->setStandardDeviation(mSmoothingSigma);
-        DataChannel::pointer port = filter->getOutputPort();
-        filter->update();
-        image = port->getNextFrame<Image>();
-    }
+		filter->setInputData(image);
+		filter->setStandardDeviation(mSmoothingSigma);
+		DataChannel::pointer port = filter->getOutputPort();
+		filter->update();
+		image = port->getNextFrame<Image>();
+	}
 
 	for (Vector3i seed : mSeedPoints) {
 		// Validate seed point
-		if(seed.x() < 0 || seed.y() < 0 || seed.z() < 0 ||
-		   seed.x() >= image->getWidth() || seed.y() >= image->getHeight() || seed.z() >= image->getDepth()) {
+		if (seed.x() < 0 || seed.y() < 0 || seed.z() < 0 || seed.x() >= width || seed.y() >= height || seed.z() >= depth) {
 			throw Exception("Seed point was not inside image in AirwaySegmentation");
 		}
 	}
@@ -496,13 +536,10 @@ void AirwaySegmentation::execute() {
 	Segmentation::pointer segmentation = getOutputData<Segmentation>();
 
 	regionGrowing(image, segmentation, mSeedPoints);
-
-	// Do morphological closing to remove holes in segmentation
-	// morphologicalClosing(segmentation);
 }
 
 void AirwaySegmentation::addSeedPoint(int x, int y, int z) {
-    addSeedPoint(Vector3i(x, y, z));
+  addSeedPoint(Vector3i(x, y, z));
 }
 
 void AirwaySegmentation::addSeedPoint(Vector3i seed) {
@@ -511,6 +548,10 @@ void AirwaySegmentation::addSeedPoint(Vector3i seed) {
 
 void AirwaySegmentation::setSmoothing(float sigma) {
 	mSmoothingSigma = sigma;
+}
+
+void AirwaySegmentation::setDebug(bool debugMode) {
+	debug = debugMode;
 }
 
 void AirwaySegmentation::setVoxSpacing(Vector3f spacing) {
@@ -532,8 +573,6 @@ void AirwaySegmentation::setSensitivity(int sensitivity) {
 	maxAirwayDensity = std::max((float)-550.0, interpolate1D(-650.0, -450.0, s));
 
 	maxPathRadiusIncrease = interpolate1D(0.9, 0.7, s);
-	pathLengthMaxCentricity = interpolate1D(0.7, 0.56, s);
-	pathLengthMinCentricity = interpolate1D(0.2, 0.3, s);
 
 	branchEndMinCentricity = interpolate1D(0.26, 0.4, s);
 	branchEndMaxRadius = interpolate1D(1.1, 0.9, s);
@@ -542,8 +581,6 @@ void AirwaySegmentation::setSensitivity(int sensitivity) {
 	Reporter::info() << "maxRadiusIncrease: " << maxRadiusIncrease << Reporter::end();
 	Reporter::info() << "maxAirwayDensity: " << maxAirwayDensity << Reporter::end();
 	Reporter::info() << "maxPathRadiusIncrease: " << maxPathRadiusIncrease << Reporter::end();
-	Reporter::info() << "pathLengthMaxCentricity: " << pathLengthMaxCentricity << Reporter::end();
-	Reporter::info() << "pathLengthMinCentricity: " << pathLengthMinCentricity << Reporter::end();
 	Reporter::info() << "branchEndMinCentricity: " << branchEndMinCentricity << Reporter::end();
 	Reporter::info() << "branchEndMaxRadius: " << branchEndMaxRadius << Reporter::end();
 }

@@ -65,6 +65,7 @@ class FAST_EXPORT  AirwaySegmentation : public SegmentationAlgorithm {
 		Vector3i autoSeed;
 		std::vector<Voxel> maskVoxels;
 		void setSensitivity(int sensitivity);
+		void setDebug(bool);
 	private:
 		AirwaySegmentation();
 		void execute();
@@ -89,6 +90,8 @@ class FAST_EXPORT  AirwaySegmentation : public SegmentationAlgorithm {
 		Vector3f icohalfVx[21];
 		float mmPerVx = 1.0;
 
+		bool debug = false;
+
 		// alg parameters
 		float deltaW = 200.0;
 		float dr = 0.5;
@@ -99,8 +102,6 @@ class FAST_EXPORT  AirwaySegmentation : public SegmentationAlgorithm {
 
 		// path length leakage detection
 		float maxPathRadiusIncrease = 0.8;
-		float pathLengthMaxCentricity = 0.63;
-		float pathLengthMinCentricity = 0.25;
 		int pathLengthMinVoxels = 20;
 
 		// branch end detection

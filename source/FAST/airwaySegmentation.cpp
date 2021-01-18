@@ -18,10 +18,12 @@ Vector3f vxToMm(Vector3i seed, Vector3f origin, Vector3f spacing);
 double toThreeDecimalPlaces(double d);
 
 int main(int argc, char** argv) {
-    Reporter::setGlobalReportMethod(Reporter::COUT); // TODO remove
+  Reporter::setGlobalReportMethod(Reporter::COUT); // TODO remove
 	CommandLineParser parser("Airway segmentation");
-    parser.addVariable("smoothing", "0.5", "How much smoothing to apply before segmentation");
+  parser.addVariable("smoothing", "0.5", "How much smoothing to apply before segmentation");
 	parser.addVariable("seg_config", true, "seg config .json");
+	parser.addVariable("sensitivity", "5", "sensitivity of segmentation 0-10");
+	parser.addVariable("debug", "false", "whether or not to output voxData.json file");
 	parser.parse(argc, argv);
 
 	std::ifstream configFile(parser.get("seg_config"));
@@ -72,12 +74,16 @@ int main(int argc, char** argv) {
 	auto importer = ImageFileImporter::New();
 	importer->setFilename(volPath);
 
+	bool debug = parser.get("debug") == "true" ? true : false;
+	int sensitivity = std::stoi(parser.get("sensitivity"));
+
 	// Do airway segmentation
 	auto segmentation = AirwaySegmentation::New();
 	segmentation->setInputConnection(importer->getOutputPort());
 	segmentation->setSmoothing(parser.get<float>("smoothing"));
 	segmentation->setVoxSpacing(spacing);
-	segmentation->setSensitivity(5);
+	segmentation->setDebug(debug);
+	segmentation->setSensitivity(sensitivity);
 
 	auto newSeeds = segData["tracheal_points_vx"]["new"];
 	for (auto seed : newSeeds) {
@@ -94,6 +100,10 @@ int main(int argc, char** argv) {
 	exporter->setFilename(airwayPath);
 	exporter->setInputConnection(segmentation->getOutputPort());
 	exporter->update();
+
+	if (!debug) {
+		return 0;
+	}
 
 	nlohmann::json voxelJSON;
 
