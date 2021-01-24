@@ -312,6 +312,11 @@ int AirwaySegmentation::grow(Vector3i seed, uchar* mask, std::vector<Vector3i> n
 				continue;
 			}
 
+			// outside of bounding box
+			if (y.x() < bbMin.x() || y.y() < bbMin.y() || y.z() < bbMin.z() || y.x() > bbMax.x() || y.y() > bbMax.y() || y.z() > bbMax.z()) {
+				continue;
+			}
+
 			int volIdx = getIndex(y);
 
 			// vox already in mask
@@ -583,6 +588,11 @@ void AirwaySegmentation::setSensitivity(int sensitivity) {
 	Reporter::info() << "maxPathRadiusIncrease: " << maxPathRadiusIncrease << Reporter::end();
 	Reporter::info() << "branchEndMinCentricity: " << branchEndMinCentricity << Reporter::end();
 	Reporter::info() << "branchEndMaxRadius: " << branchEndMaxRadius << Reporter::end();
+}
+
+void AirwaySegmentation::setBB(Vector3i min, Vector3i max) {
+	bbMin = min;
+	bbMax = max;
 }
 
 }

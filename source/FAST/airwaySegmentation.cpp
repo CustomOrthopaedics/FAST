@@ -95,6 +95,13 @@ int main(int argc, char** argv) {
 		segmentation->addSeedPoint(Vector3i(seed[0], seed[1], seed[2]));
 	}
 
+	if (segData.contains("seg_bb_min_mm") && segData.contains("seg_bb_max_mm") && segData["seg_bb_min_mm"].size() == 3 && segData["seg_bb_max_mm"].size() == 3) {
+		Vector3i bbMin(mmToVx(Vector3f(segData["seg_bb_min_mm"][0], segData["seg_bb_min_mm"][1], segData["seg_bb_min_mm"][2]), offset, spacing));
+		Vector3i bbMax(mmToVx(Vector3f(segData["seg_bb_max_mm"][0], segData["seg_bb_max_mm"][1], segData["seg_bb_max_mm"][2]), offset, spacing));
+
+		segmentation->setBB(bbMin, bbMax);
+	}
+
 	auto exporter = MetaImageExporter::New();
 	std::string airwayPath = (std::string)segData["results_path"] + "/seg_" + std::to_string((int)segData["seg_id"]) + ".mhd";
 	exporter->setFilename(airwayPath);

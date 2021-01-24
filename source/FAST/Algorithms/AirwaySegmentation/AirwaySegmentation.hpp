@@ -66,6 +66,7 @@ class FAST_EXPORT  AirwaySegmentation : public SegmentationAlgorithm {
 		std::vector<Voxel> maskVoxels;
 		void setSensitivity(int sensitivity);
 		void setDebug(bool);
+		void setBB(Vector3i, Vector3i);
 	private:
 		AirwaySegmentation();
 		void execute();
@@ -107,6 +108,10 @@ class FAST_EXPORT  AirwaySegmentation : public SegmentationAlgorithm {
 		// branch end detection
 		float branchEndMinCentricity = 0.33;
 		float branchEndMaxRadius = 1.0;
+
+		// bounding box in voxel coordinates
+		Vector3i bbMin = Vector3i(0, 0, 0);
+		Vector3i bbMax = Vector3i(100000, 100000, 100000);
 };
 
 }
