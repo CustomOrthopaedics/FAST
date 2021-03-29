@@ -331,9 +331,19 @@ int AirwaySegmentation::grow(Vector3i seed, uchar* mask, std::vector<Vector3i> n
 
 			Voxel vox(getVoxelData(data, y));
 
+			if (vox.centricity < minCent) {
+					if (debug) {
+						vox.maskIdx = maskIdx++;
+						vox.pathVoxelIdx = -4;
+						maskVoxels.push_back(vox);
+					}
+
+				continue;
+			}
+
 			// possible end of branch detected, voxel may be leaking
 			// don't add vox to mask
-			if (currVox.centricity > branchEndMinCentricity && currVox.minRadius < branchEndMaxRadius) {
+			if (vox.centricity > branchEndMinCentricity && vox.minRadius < branchEndMaxRadius) {
 				mask[volIdx] = 3;
 				continue;
 			}
@@ -567,6 +577,8 @@ void AirwaySegmentation::setVoxSpacing(Vector3f spacing) {
 		icohalfVx[i] = icohalfMm[i];
 		icohalfVx[i] = icohalfVx[i].cwiseQuotient(spacing);
 	}
+
+	dr /= calcDistance(Vector3f(0, 0, 0), spacing);
 }
 
 void AirwaySegmentation::setSensitivity(int sensitivity) {
@@ -588,6 +600,7 @@ void AirwaySegmentation::setSensitivity(int sensitivity) {
 	Reporter::info() << "maxPathRadiusIncrease: " << maxPathRadiusIncrease << Reporter::end();
 	Reporter::info() << "branchEndMinCentricity: " << branchEndMinCentricity << Reporter::end();
 	Reporter::info() << "branchEndMaxRadius: " << branchEndMaxRadius << Reporter::end();
+	Reporter::info() << "dr: " << dr << Reporter::end();
 }
 
 void AirwaySegmentation::setBB(Vector3i min, Vector3i max) {

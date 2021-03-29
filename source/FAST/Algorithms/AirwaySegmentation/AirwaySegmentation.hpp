@@ -97,8 +97,9 @@ class FAST_EXPORT  AirwaySegmentation : public SegmentationAlgorithm {
 		float deltaW = 200.0;
 		float dr = 0.5;
 		float rMax = 20.0;
-		float maxRadiusIncrease = 2.4;
+		float maxRadiusIncrease = 2.2;
 		float maxAirwayDensity = -550.0;
+		float minCent = 0.0;
 		int maxVoxelVal = 1000;
 
 		// path length leakage detection
