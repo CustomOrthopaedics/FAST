@@ -20,9 +20,7 @@ double toThreeDecimalPlaces(double d);
 int main(int argc, char** argv) {
   Reporter::setGlobalReportMethod(Reporter::COUT); // TODO remove
 	CommandLineParser parser("Airway segmentation");
-  parser.addVariable("smoothing", "0.5", "How much smoothing to apply before segmentation");
 	parser.addVariable("seg_config", true, "seg config .json");
-	parser.addVariable("sensitivity", "5", "sensitivity of segmentation 0-10");
 	parser.addVariable("debug", "false", "whether or not to output voxData.json file");
 	parser.parse(argc, argv);
 
@@ -75,15 +73,18 @@ int main(int argc, char** argv) {
 	importer->setFilename(volPath);
 
 	bool debug = parser.get("debug") == "true" ? true : false;
-	int sensitivity = std::stoi(parser.get("sensitivity"));
 
 	// Do airway segmentation
 	auto segmentation = AirwaySegmentation::New();
 	segmentation->setInputConnection(importer->getOutputPort());
-	segmentation->setSmoothing(parser.get<float>("smoothing"));
 	segmentation->setVoxSpacing(spacing);
 	segmentation->setDebug(debug);
-	segmentation->setSensitivity(sensitivity);
+
+	if (segData.contains("sensitivity")) {
+		segmentation->setSensitivity(segData["sensitivity"]);
+	} else {
+		segmentation->setSensitivity(5);
+	}
 
 	auto newSeeds = segData["tracheal_points_vx"]["new"];
 	for (auto seed : newSeeds) {

@@ -80,10 +80,10 @@ class FAST_EXPORT  AirwaySegmentation : public SegmentationAlgorithm {
 		Voxel getVoxelData(short *vol, Vector3i point);
 		int grow(Vector3i seed, uchar* mask, std::vector<Vector3i> neighbors, short* data, float threshold, int& maskIdx);
 		void regionGrowing(Image::pointer volume, Segmentation::pointer segmentation, const std::vector<Vector3i> seeds);
+		int numNeighbors(uchar *, Vector3i);
 
 		std::vector<Vector3i> mSeedPoints;
 		Vector3f voxSpacing = Vector3f(1, 1, 1);
-		float mSmoothingSigma = 0.5;
     bool mUseManualSeedPoint = false;
 		int height;
 		int width;
@@ -93,22 +93,28 @@ class FAST_EXPORT  AirwaySegmentation : public SegmentationAlgorithm {
 
 		bool debug = false;
 
-		// alg parameters
+		// alg constants
 		float deltaW = 200.0;
 		float dr = 0.5;
 		float rMax = 20.0;
-		float maxRadiusIncrease = 2.2;
-		float maxAirwayDensity = -550.0;
 		float minCent = 0.0;
 		int maxVoxelVal = 1000;
+
+		// Voxels identified to be leakage by "maxRadiusIncrease" param must have a centricity above this value
+		// in order to be kept in the mask. This is to reduce leakage at the ends of branches and make the mask "cleaner".
+		float minLeakageCentricity = 0.5;
 
 		// path length leakage detection
 		float maxPathRadiusIncrease = 0.8;
 		int pathLengthMinVoxels = 20;
 
-		// branch end detection
-		float branchEndMinCentricity = 0.33;
-		float branchEndMaxRadius = 1.0;
+		// alg parameters
+		float maxRadiusIncrease = 2.3;
+		float maxAirwayDensity = -600.0;
+		int minNeighbors = 9;
+		float branchEndMinCentricity = 0.5;
+		float branchEndMaxRadius = 1.3;
+		float mSmoothingSigma = 0.5;
 
 		// bounding box in voxel coordinates
 		Vector3i bbMin = Vector3i(0, 0, 0);

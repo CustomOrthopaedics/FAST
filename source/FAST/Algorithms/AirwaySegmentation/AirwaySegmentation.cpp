@@ -169,6 +169,34 @@ Voxel AirwaySegmentation::getVoxelData(short *vol, Vector3i point) {
 	return vox;
 }
 
+int AirwaySegmentation::numNeighbors(uchar *mask, Vector3i point) {
+	int count = 0;
+
+	for (int x = -1; x <= 1; ++x) {
+		for (int y = -1; y <= 1; ++y) {
+			for (int z = -1; z <= 1; ++z) {
+				if (x == 0 && y == 0 && z == 0) {
+					continue;
+				}
+
+				int nX = point.x() + x;
+				int nY = point.y() + y;
+				int nZ = point.z() + z;
+				if (nX < 0 || nX > width || nY < 0 || nY > height || nZ < 0 || nZ > depth) {
+					continue;
+				}
+
+				int voxIdx = getIndex(nX, nY, nZ);
+				if (mask[voxIdx] != 0) {
+					count++;
+				}
+			}
+		}
+	}
+
+	return count;
+}
+
 AirwaySegmentation::AirwaySegmentation() {
 	createInputPort<Image>(0);
 	createOutputPort<Segmentation>(0);
@@ -299,6 +327,13 @@ int AirwaySegmentation::grow(Vector3i seed, uchar* mask, std::vector<Vector3i> n
 			continue;
 		}
 
+		// remove voxels with few neighbors from mask
+		// wait til mask has grown some before making this check
+		if (numNeighbors(mask, currVox.point) < minNeighbors && maskSize > 50) {
+			mask[getIndex(currVox.point)] = 0;
+			continue;
+		}
+
 		if (debug) {
 			maskVoxels.push_back(currVox);
 		}
@@ -332,33 +367,35 @@ int AirwaySegmentation::grow(Vector3i seed, uchar* mask, std::vector<Vector3i> n
 			Voxel vox(getVoxelData(data, y));
 
 			if (vox.centricity < minCent) {
-					if (debug) {
-						vox.maskIdx = maskIdx++;
-						vox.pathVoxelIdx = -4;
-						maskVoxels.push_back(vox);
-					}
-
 				continue;
 			}
 
 			// possible end of branch detected, voxel may be leaking
 			// don't add vox to mask
-			if (vox.centricity > branchEndMinCentricity && vox.minRadius < branchEndMaxRadius) {
+			if (vox.centricity > branchEndMinCentricity && vox.meanRadii < branchEndMaxRadius) {
 				mask[volIdx] = 3;
+				maskSize++;
+
+				if (debug) {
+					vox.maskIdx = maskIdx++;
+					maskVoxels.push_back(vox);
+				}
+
 				continue;
 			}
 
-			// add vox to mask
-			mask[volIdx] = 1;
-			maskSize++;
-
 			// radius is too large, voxel may be leaking
-			// add vox to mask
 			if (vox.meanRadii > pathMinRadius * maxRadiusIncrease) {
-				if (debug) {
-					vox.maskIdx = maskIdx++;
-					vox.pathVoxelIdx = -1;
-					maskVoxels.push_back(vox);
+				if (vox.centricity > minLeakageCentricity) {
+					// add vox to mask
+					mask[volIdx] = 1;
+					maskSize++;
+
+					if (debug) {
+						vox.maskIdx = maskIdx++;
+						vox.pathVoxelIdx = -1;
+						maskVoxels.push_back(vox);
+					}
 				}
 
 				continue;
@@ -368,6 +405,10 @@ int AirwaySegmentation::grow(Vector3i seed, uchar* mask, std::vector<Vector3i> n
 			if (pathMinRadius < vox.minRadius) {
 				vox.minRadius = pathMinRadius;
 			}
+
+			// add vox to mask
+			mask[volIdx] = 1;
+			maskSize++;
 
 			queue.push(vox);
 		}
@@ -582,24 +623,28 @@ void AirwaySegmentation::setVoxSpacing(Vector3f spacing) {
 }
 
 void AirwaySegmentation::setSensitivity(int sensitivity) {
-	float s = static_cast<float>(sensitivity) / 10.0;
-	maxRadiusIncrease = interpolate1D(2.3, 2.5, s);
-
-	// sensitivity 5-10 -> -550, -450 max density
-	// sensitivity 0-5 -> -550 max density
-	maxAirwayDensity = std::max((float)-550.0, interpolate1D(-650.0, -450.0, s));
-
-	maxPathRadiusIncrease = interpolate1D(0.9, 0.7, s);
-
-	branchEndMinCentricity = interpolate1D(0.26, 0.4, s);
-	branchEndMaxRadius = interpolate1D(1.1, 0.9, s);
+		if (sensitivity <= 5) {
+		float normalizedS = static_cast<float>(sensitivity) / 5.0;
+		maxAirwayDensity = interpolate1D(-650, -600, normalizedS);
+		maxRadiusIncrease = interpolate1D(2.1, 2.3, normalizedS);
+		branchEndMaxRadius = interpolate1D(1.6, 1.3, normalizedS);
+		minNeighbors = 9;
+		this->setSmoothing(0.5);
+	} else if (sensitivity > 5) {
+		float normalizedS = static_cast<float>(sensitivity - 5) / 5.0;
+		maxAirwayDensity = interpolate1D(-600, -550, normalizedS);
+		maxRadiusIncrease = interpolate1D(2.3, 2.6, normalizedS);
+		branchEndMaxRadius = interpolate1D(1.3, 1.1, normalizedS);
+		minNeighbors = 9 - ((sensitivity - 4) / 2);
+		this->setSmoothing(interpolate1D(0.5, 0.25, normalizedS));
+	}
 
 	Reporter::info() << "Alg sensitivity set to: " << sensitivity << Reporter::end();
 	Reporter::info() << "maxRadiusIncrease: " << maxRadiusIncrease << Reporter::end();
 	Reporter::info() << "maxAirwayDensity: " << maxAirwayDensity << Reporter::end();
-	Reporter::info() << "maxPathRadiusIncrease: " << maxPathRadiusIncrease << Reporter::end();
-	Reporter::info() << "branchEndMinCentricity: " << branchEndMinCentricity << Reporter::end();
 	Reporter::info() << "branchEndMaxRadius: " << branchEndMaxRadius << Reporter::end();
+	Reporter::info() << "minNeighbors: " << minNeighbors << Reporter::end();
+	Reporter::info() << "smoothing: " << mSmoothingSigma << Reporter::end();
 	Reporter::info() << "dr: " << dr << Reporter::end();
 }
 
