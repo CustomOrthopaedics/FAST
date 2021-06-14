@@ -47,6 +47,14 @@ struct Voxel {
 	}
 };
 
+struct SegAlgConfig {
+	float maxRadiusIncrease = 2.3;
+	float maxAirwayDensity = -600.0;
+	int minNeighbors = 9;
+	float branchEndMaxRadius = 1.3;
+	float mSmoothingSigma = 0.5;
+};
+
 class Image;
 class Segmentation;
 
@@ -67,6 +75,7 @@ class FAST_EXPORT  AirwaySegmentation : public SegmentationAlgorithm {
 		void setSensitivity(int sensitivity);
 		void setDebug(bool);
 		void setBB(Vector3i, Vector3i);
+		SegAlgConfig getAlgConfig();        
 	private:
 		AirwaySegmentation();
 		void execute();
@@ -99,6 +108,7 @@ class FAST_EXPORT  AirwaySegmentation : public SegmentationAlgorithm {
 		float rMax = 20.0;
 		float minCent = 0.0;
 		int maxVoxelVal = 1000;
+		float branchEndMinCentricity = 0.5;
 
 		// Voxels identified to be leakage by "maxRadiusIncrease" param must have a centricity above this value
 		// in order to be kept in the mask. This is to reduce leakage at the ends of branches and make the mask "cleaner".
@@ -108,13 +118,7 @@ class FAST_EXPORT  AirwaySegmentation : public SegmentationAlgorithm {
 		float maxPathRadiusIncrease = 0.8;
 		int pathLengthMinVoxels = 20;
 
-		// alg parameters
-		float maxRadiusIncrease = 2.3;
-		float maxAirwayDensity = -600.0;
-		int minNeighbors = 9;
-		float branchEndMinCentricity = 0.5;
-		float branchEndMaxRadius = 1.3;
-		float mSmoothingSigma = 0.5;
+		SegAlgConfig algConfig;
 
 		// bounding box in voxel coordinates
 		Vector3i bbMin = Vector3i(0, 0, 0);

@@ -329,7 +329,7 @@ int AirwaySegmentation::grow(Vector3i seed, uchar* mask, std::vector<Vector3i> n
 
 		// remove voxels with few neighbors from mask
 		// wait til mask has grown some before making this check
-		if (numNeighbors(mask, currVox.point) < minNeighbors && maskSize > 50) {
+		if (numNeighbors(mask, currVox.point) < algConfig.minNeighbors && maskSize > 50) {
 			mask[getIndex(currVox.point)] = 0;
 			continue;
 		}
@@ -372,7 +372,7 @@ int AirwaySegmentation::grow(Vector3i seed, uchar* mask, std::vector<Vector3i> n
 
 			// possible end of branch detected, voxel may be leaking
 			// don't add vox to mask
-			if (vox.centricity > branchEndMinCentricity && vox.meanRadii < branchEndMaxRadius) {
+			if (vox.centricity > branchEndMinCentricity && vox.meanRadii < algConfig.branchEndMaxRadius) {
 				mask[volIdx] = 3;
 				maskSize++;
 
@@ -385,7 +385,7 @@ int AirwaySegmentation::grow(Vector3i seed, uchar* mask, std::vector<Vector3i> n
 			}
 
 			// radius is too large, voxel may be leaking
-			if (vox.meanRadii > pathMinRadius * maxRadiusIncrease) {
+			if (vox.meanRadii > pathMinRadius * algConfig.maxRadiusIncrease) {
 				if (vox.centricity > minLeakageCentricity) {
 					// add vox to mask
 					mask[volIdx] = 1;
@@ -452,7 +452,7 @@ void AirwaySegmentation::regionGrowing(Image::pointer volume, Segmentation::poin
 		Reporter::info() << "Segmenting Seed: " << seed.transpose() << Reporter::end();
 
 		// perform region growing, store results in segMask
-		grow(seed, segMask, neighborList, volData, maxAirwayDensity, maskIdx);
+		grow(seed, segMask, neighborList, volData, algConfig.maxAirwayDensity, maskIdx);
 	}
 
 	for (int x = 0; x < width; ++x) {
@@ -573,10 +573,10 @@ void AirwaySegmentation::execute() {
 	}
 
 	// Smooth image
-	if(mSmoothingSigma > 0) {
+	if(algConfig.mSmoothingSigma > 0) {
 		GaussianSmoothingFilter::pointer filter = GaussianSmoothingFilter::New();
 		filter->setInputData(image);
-		filter->setStandardDeviation(mSmoothingSigma);
+		filter->setStandardDeviation(algConfig.mSmoothingSigma);
 		DataChannel::pointer port = filter->getOutputPort();
 		filter->update();
 		image = port->getNextFrame<Image>();
@@ -603,7 +603,7 @@ void AirwaySegmentation::addSeedPoint(Vector3i seed) {
 }
 
 void AirwaySegmentation::setSmoothing(float sigma) {
-	mSmoothingSigma = sigma;
+	algConfig.mSmoothingSigma = sigma;
 }
 
 void AirwaySegmentation::setDebug(bool debugMode) {
@@ -625,32 +625,36 @@ void AirwaySegmentation::setVoxSpacing(Vector3f spacing) {
 void AirwaySegmentation::setSensitivity(int sensitivity) {
 		if (sensitivity <= 5) {
 		float normalizedS = static_cast<float>(sensitivity) / 5.0;
-		maxAirwayDensity = interpolate1D(-650, -600, normalizedS);
-		maxRadiusIncrease = interpolate1D(2.1, 2.3, normalizedS);
-		branchEndMaxRadius = interpolate1D(1.6, 1.3, normalizedS);
-		minNeighbors = 9;
+		algConfig.maxAirwayDensity = interpolate1D(-650, -600, normalizedS);
+		algConfig.maxRadiusIncrease = interpolate1D(2.1, 2.3, normalizedS);
+		algConfig.branchEndMaxRadius = interpolate1D(1.6, 1.3, normalizedS);
+		algConfig.minNeighbors = 9;
 		this->setSmoothing(0.5);
 	} else if (sensitivity > 5) {
 		float normalizedS = static_cast<float>(sensitivity - 5) / 5.0;
-		maxAirwayDensity = interpolate1D(-600, -550, normalizedS);
-		maxRadiusIncrease = interpolate1D(2.3, 2.6, normalizedS);
-		branchEndMaxRadius = interpolate1D(1.3, 1.1, normalizedS);
-		minNeighbors = 9 - ((sensitivity - 4) / 2);
+		algConfig.maxAirwayDensity = interpolate1D(-600, -550, normalizedS);
+		algConfig.maxRadiusIncrease = interpolate1D(2.3, 2.6, normalizedS);
+		algConfig.branchEndMaxRadius = interpolate1D(1.3, 1.1, normalizedS);
+		algConfig.minNeighbors = 9 - ((sensitivity - 4) / 2);
 		this->setSmoothing(interpolate1D(0.5, 0.25, normalizedS));
 	}
 
 	Reporter::info() << "Alg sensitivity set to: " << sensitivity << Reporter::end();
-	Reporter::info() << "maxRadiusIncrease: " << maxRadiusIncrease << Reporter::end();
-	Reporter::info() << "maxAirwayDensity: " << maxAirwayDensity << Reporter::end();
-	Reporter::info() << "branchEndMaxRadius: " << branchEndMaxRadius << Reporter::end();
-	Reporter::info() << "minNeighbors: " << minNeighbors << Reporter::end();
-	Reporter::info() << "smoothing: " << mSmoothingSigma << Reporter::end();
+	Reporter::info() << "maxRadiusIncrease: " << algConfig.maxRadiusIncrease << Reporter::end();
+	Reporter::info() << "maxAirwayDensity: " << algConfig.maxAirwayDensity << Reporter::end();
+	Reporter::info() << "branchEndMaxRadius: " << algConfig.branchEndMaxRadius << Reporter::end();
+	Reporter::info() << "minNeighbors: " << algConfig.minNeighbors << Reporter::end();
+	Reporter::info() << "smoothing: " << algConfig.mSmoothingSigma << Reporter::end();
 	Reporter::info() << "dr: " << dr << Reporter::end();
 }
 
 void AirwaySegmentation::setBB(Vector3i min, Vector3i max) {
 	bbMin = min;
 	bbMax = max;
+}
+
+SegAlgConfig AirwaySegmentation::getAlgConfig() {
+	return algConfig;
 }
 
 }

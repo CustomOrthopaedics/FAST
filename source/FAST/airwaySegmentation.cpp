@@ -109,6 +109,18 @@ int main(int argc, char** argv) {
 	exporter->setInputConnection(segmentation->getOutputPort());
 	exporter->update();
 
+	// save alg params to seg config file
+	SegAlgConfig algConfig = segmentation->getAlgConfig();
+	segData["maxRadiusIncrease"] = algConfig.maxRadiusIncrease;
+	segData["maxAirwayDensity"] = algConfig.maxAirwayDensity;
+	segData["minNeighbors"] = algConfig.minNeighbors;
+	segData["branchEndMaxRadius"] = algConfig.branchEndMaxRadius;
+	segData["smoothing"] = algConfig.mSmoothingSigma;
+	
+	std::ofstream outFile(parser.get("seg_config"));
+	outFile << std::setw(2) << segData << std::endl;
+	outFile.close();
+	
 	if (!debug) {
 		return 0;
 	}
