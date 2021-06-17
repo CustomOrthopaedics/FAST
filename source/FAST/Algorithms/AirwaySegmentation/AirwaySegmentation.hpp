@@ -75,7 +75,8 @@ class FAST_EXPORT  AirwaySegmentation : public SegmentationAlgorithm {
 		void setSensitivity(int sensitivity);
 		void setDebug(bool);
 		void setBB(Vector3i, Vector3i);
-		SegAlgConfig getAlgConfig();        
+		SegAlgConfig getAlgConfig();
+		std::vector<Vector3i> getCenterlinePoints();
 	private:
 		AirwaySegmentation();
 		void execute();
@@ -123,6 +124,8 @@ class FAST_EXPORT  AirwaySegmentation : public SegmentationAlgorithm {
 		// bounding box in voxel coordinates
 		Vector3i bbMin = Vector3i(0, 0, 0);
 		Vector3i bbMax = Vector3i(100000, 100000, 100000);
+
+		std::vector<Voxel> centerlineVoxels;
 };
 
 }

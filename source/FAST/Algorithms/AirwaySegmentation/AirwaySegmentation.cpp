@@ -7,6 +7,7 @@
 #include <vector>
 #include <algorithm>
 #include <math.h>
+#include <fstream>
 #include <boost/accumulators/statistics/variance.hpp>
 #include <boost/accumulators/accumulators.hpp>
 #include <boost/accumulators/statistics/stats.hpp>
@@ -411,6 +412,11 @@ int AirwaySegmentation::grow(Vector3i seed, uchar* mask, std::vector<Vector3i> n
 			maskSize++;
 
 			queue.push(vox);
+
+			// TODO: remove voxels removed by minNeighbor check
+			if (vox.centricity >= 0.75) {
+				centerlineVoxels.push_back(vox);
+			}
 		}
 
 		prevVox = currVox;
@@ -655,6 +661,69 @@ void AirwaySegmentation::setBB(Vector3i min, Vector3i max) {
 
 SegAlgConfig AirwaySegmentation::getAlgConfig() {
 	return algConfig;
+}
+
+std::vector<Vector3i> AirwaySegmentation::getCenterlinePoints() {
+	std::vector<Vector3i> centerlinePoints;
+	std::cout << "centerlineVoxels size: " << centerlineVoxels.size() << std::endl;
+
+	// sort voxels by asc Z index
+	std::sort(centerlineVoxels.begin(), centerlineVoxels.end(), [&](Voxel a, Voxel b) {
+		return a.point.z() < b.point.z();
+	});
+
+	std::stack<Voxel> voxStack;
+	for (Voxel vox : centerlineVoxels) {
+		std::cout << vox.point.x() << "," << vox.point.y() << "," << vox.point.z() << std::endl;
+		voxStack.push(vox);
+	}
+
+	std::cout << "voxStack size: " << voxStack.size() << std::endl;
+
+	int z = voxStack.top().point.z();
+	std::vector<Voxel> sliceVoxels;
+	std::priority_queue<Voxel> queue;
+
+	while (!voxStack.empty()) {
+		while (!voxStack.empty() && voxStack.top().point.z() == z) {
+			sliceVoxels.push_back(voxStack.top());
+			voxStack.pop();
+		}
+
+		// std::cout << "voxStack size: " << voxStack.size() << std::endl;
+
+		while (!sliceVoxels.empty()) {
+			queue.push(sliceVoxels.back());
+			sliceVoxels.pop_back();
+
+			Vector3i avgPoint(0, 0, 0);
+			int numPoints = 0;
+
+			while (!queue.empty()) {
+				Voxel vox(queue.top());
+				queue.pop();
+
+				avgPoint += vox.point;
+				numPoints++;
+
+				for (int i = sliceVoxels.size() - 1; i >= 0; --i) {
+					Voxel neighborCand = sliceVoxels[i];
+					if (abs(neighborCand.point.x() - vox.point.x()) <= 1 && abs(neighborCand.point.y() - vox.point.y()) <= 1) {
+						// neighbor detected, add to queue and remove from sliceVoxels
+						queue.push(neighborCand);
+						sliceVoxels.pop_back();
+					}
+				}
+			}
+
+			avgPoint = avgPoint.cwiseQuotient(Vector3i(numPoints, numPoints, numPoints));
+			centerlinePoints.push_back(avgPoint);
+		}
+
+		z--;
+	}
+
+	return centerlinePoints;
 }
 
 }

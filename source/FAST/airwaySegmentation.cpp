@@ -120,6 +120,15 @@ int main(int argc, char** argv) {
 	std::ofstream outFile(parser.get("seg_config"));
 	outFile << std::setw(2) << segData << std::endl;
 	outFile.close();
+
+	std::ofstream centerlineFile((std::string)segData["results_path"] + "/seg_" + std::to_string((int)segData["seg_id"]) + ".centerline.txt");
+	std::vector<Vector3i> points = segmentation->getCenterlinePoints();
+	std::cout << "num centerline points: " << points.size() << std::endl;
+	for (Vector3i point : points) {
+		Vector3f p(vxToMm(point, offset, spacing));
+		centerlineFile << p.x() << "," << p.y() << "," << p.z() << std::endl;
+	}
+	centerlineFile.close();
 	
 	if (!debug) {
 		return 0;
